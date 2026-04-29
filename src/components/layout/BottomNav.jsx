@@ -1,31 +1,57 @@
 import { NavLink } from 'react-router-dom';
-import { CalendarDays, Ticket, BookOpen, User } from 'lucide-react';
+import LordIcon from '@/components/ui/LordIcon';
 
 const tabs = [
-  { to: '/discover',    label: 'Discover',  Icon: CalendarDays },
-  { to: '/passes',      label: 'My Passes', Icon: Ticket },
-  { to: '/bookings',    label: 'Bookings',  Icon: BookOpen },
-  { to: '/profile',     label: 'Profile',   Icon: User },
+  {
+    to: '/discover',
+    label: 'Discover',
+    icon: 'https://cdn.lordicon.com/msoeawqm.json',
+  },
+  {
+    to: '/passes',
+    label: 'My Passes',
+    icon: 'https://cdn.lordicon.com/sbiheqdr.json',
+  },
+  {
+    to: '/bookings',
+    label: 'Bookings',
+    icon: 'https://cdn.lordicon.com/ogkflacg.json',
+  },
+  {
+    to: '/profile',
+    label: 'Profile',
+    icon: 'https://cdn.lordicon.com/bhfjlmgs.json',
+  },
 ];
 
 export default function BottomNav() {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex"
+      className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex shadow-[0_-1px_12px_rgba(0,0,0,0.06)]"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
-      {tabs.map(({ to, label, Icon }) => (
+      {tabs.map(({ to, label, icon }) => (
         <NavLink
           key={to}
           to={to}
           className={({ isActive }) =>
-            `flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-xs font-medium transition-colors ${
+            `flex-1 flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium tracking-wide transition-colors ${
               isActive ? 'text-indigo-600' : 'text-gray-400'
             }`
           }
         >
-          <Icon className="h-5 w-5" strokeWidth={1.8} />
-          {label}
+          {({ isActive }) => (
+            <>
+              <LordIcon
+                src={icon}
+                trigger={isActive ? 'loop' : 'hover'}
+                size={22}
+                primary={isActive ? '#6366f1' : '#9ca3af'}
+                secondary={isActive ? '#818cf8' : '#d1d5db'}
+              />
+              {label}
+            </>
+          )}
         </NavLink>
       ))}
     </nav>
