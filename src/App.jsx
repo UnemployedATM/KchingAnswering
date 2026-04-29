@@ -9,7 +9,7 @@ import MyPasses from '@/pages/MyPasses';
 import MyBookings from '@/pages/MyBookings';
 import BookClass from '@/pages/BookClass';
 import Profile from '@/pages/Profile';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase'; // used for join_studio RPC in ProtectedRoutes
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 30, retry: 1 } },
@@ -62,22 +62,17 @@ function AuthPage() {
   return <Auth />;
 }
 
-// Web-only: Supabase auto-exchanges ?code= via detectSessionInUrl on page load.
-// We just wait for onAuthStateChange to confirm the session, then navigate.
+// Web-only: Supabase auto-exchanges ?code= on load. AuthContext stays in
+// loading=true until the exchange resolves, then we navigate accordingly.
 function AuthCallback() {
   const navigate = useNavigate();
+  const { isAuthenticated, loading } = useAuth();
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        navigate('/discover', { replace: true });
-      } else if (event === 'INITIAL_SESSION' && !session) {
-        // No code or exchange failed
-        navigate('/auth', { replace: true });
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+    if (!loading) {
+      navigate(isAuthenticated ? '/discover' : '/auth', { replace: true });
+    }
+  }, [loading, isAuthenticated]);
 
   return (
     <div className="flex items-center justify-center h-full">

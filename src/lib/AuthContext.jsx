@@ -33,17 +33,28 @@ export function AuthProvider({ children }) {
       .then(({ data: { session } }) => {
         const u = session?.user ?? null;
         setUser(u);
-        if (u) loadClient(u.id).finally(() => setLoading(false));
-        else    setLoading(false);
+        if (u) {
+          loadClient(u.id).finally(() => setLoading(false));
+        } else {
+          // If we're on the OAuth callback page, Supabase is mid-exchange — stay loading
+          // until onAuthStateChange fires with the result.
+          const isCallback = window.location.pathname === '/auth/callback'
+            && new URLSearchParams(window.location.search).has('code');
+          if (!isCallback) setLoading(false);
+        }
       })
-      .catch(() => setLoading(false)); // always unblock the spinner
+      .catch(() => setLoading(false));
 
-    // 2. Keep state in sync whenever Supabase auth changes
+    // 2. Keep state in sync; also resolves loading after a code exchange
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user ?? null;
       setUser(u);
-      if (u) loadClient(u.id);
-      else    setClient(null);
+      if (u) {
+        loadClient(u.id).finally(() => setLoading(false));
+      } else {
+        setClient(null);
+        setLoading(false);
+      }
     });
 
     // 3. On native: listen for the deep-link callback from the system browser.
