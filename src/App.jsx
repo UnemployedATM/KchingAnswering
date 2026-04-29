@@ -49,20 +49,21 @@ function AuthPage() {
   return <Auth />;
 }
 
-// Web-only: Supabase redirects here after OAuth with ?code= in the URL.
-// On native the deep link is handled in AuthContext via the appUrlOpen listener.
+// Web-only: Supabase auto-exchanges ?code= via detectSessionInUrl on page load.
+// We just wait for onAuthStateChange to confirm the session, then navigate.
 function AuthCallback() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get('code');
-    if (code) {
-      supabase.auth.exchangeCodeForSession(code).finally(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
         navigate('/discover', { replace: true });
-      });
-    } else {
-      navigate('/auth', { replace: true });
-    }
+      } else if (event === 'INITIAL_SESSION' && !session) {
+        // No code or exchange failed
+        navigate('/auth', { replace: true });
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   return (
