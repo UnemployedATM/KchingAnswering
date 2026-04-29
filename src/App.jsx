@@ -15,8 +15,21 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 30, retry: 1 } },
 });
 
+// Persist ?studio= param to localStorage so it survives the OAuth redirect
+const pendingStudio = new URLSearchParams(window.location.search).get('studio');
+if (pendingStudio) localStorage.setItem('pending_studio_id', pendingStudio);
+
 function ProtectedRoutes() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user, client, reloadClient } = useAuth();
+
+  // Once logged in, check for a pending studio invite and join it
+  useEffect(() => {
+    const studioId = localStorage.getItem('pending_studio_id');
+    if (studioId && user && client !== undefined && !client?.studio_id) {
+      localStorage.removeItem('pending_studio_id');
+      supabase.rpc('join_studio', { p_studio_id: studioId }).then(() => reloadClient());
+    }
+  }, [user, client]);
 
   if (loading) {
     return (

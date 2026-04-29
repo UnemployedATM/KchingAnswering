@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { format, isToday, isTomorrow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 
 function dayLabel(dateStr) {
   const d = new Date(dateStr);
@@ -12,6 +13,19 @@ function dayLabel(dateStr) {
 
 export default function Discover() {
   const navigate = useNavigate();
+  const { client } = useAuth();
+
+  if (client !== undefined && !client?.studio_id) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-8 text-center">
+        <div className="text-5xl mb-4">🔗</div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Join a studio first</h2>
+        <p className="text-sm text-gray-500">
+          Ask your studio owner for an invite link to get started.
+        </p>
+      </div>
+    );
+  }
 
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: ['client_sessions'],
