@@ -136,7 +136,7 @@ export default function BookClass() {
                 value=""
                 checked={selectedMembership === null}
                 onChange={() => setSelectedMembership(null)}
-                className="accent-indigo-600"
+                className="accent-[#3f6840]"
               />
               <span className="text-sm text-gray-600">Drop-in (no pass)</span>
             </label>
@@ -148,7 +148,7 @@ export default function BookClass() {
                   value={m.id}
                   checked={selectedMembership === m.id}
                   onChange={() => setSelectedMembership(m.id)}
-                  className="accent-indigo-600"
+                  className="accent-[#3f6840]"
                 />
                 <div>
                   <p className="text-sm font-medium text-gray-800">{m.membership_plans?.name}</p>
@@ -169,7 +169,7 @@ export default function BookClass() {
       <button
         onClick={() => bookMutation.mutate()}
         disabled={full || bookMutation.isPending}
-        className="w-full bg-indigo-600 text-white rounded-2xl py-4 font-semibold text-base shadow-md active:scale-[0.98] transition-transform disabled:opacity-50"
+        className="w-full bg-[#3f6840] text-white rounded-2xl py-4 font-semibold text-base shadow-md active:scale-[0.98] transition-transform disabled:opacity-50"
       >
         {bookMutation.isPending ? 'Booking…' : full ? 'Class Full' : 'Confirm Booking'}
       </button>

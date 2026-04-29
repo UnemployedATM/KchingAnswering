@@ -24,10 +24,10 @@ export default function Auth() {
   }
 
   return (
-    <div className="min-h-full flex flex-col items-center justify-center px-6 py-12 bg-gradient-to-b from-indigo-50 to-white">
+    <div className="min-h-full flex flex-col items-center justify-center px-6 py-12 bg-gradient-to-b from-[#f1f7f1] to-white">
       {/* Logo / wordmark */}
       <div className="mb-10 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+        <div className="w-16 h-16 rounded-2xl bg-[#3f6840] flex items-center justify-center mx-auto mb-4 shadow-lg">
           <span className="text-white text-2xl font-bold">S</span>
         </div>
         <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Serenity</h1>
@@ -42,7 +42,7 @@ export default function Auth() {
           className="w-full flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm active:scale-95 transition-transform disabled:opacity-50"
         >
           {loading === 'google' ? (
-            <span className="h-5 w-5 rounded-full border-2 border-gray-300 border-t-indigo-600 animate-spin" />
+            <span className="h-5 w-5 rounded-full border-2 border-gray-300 border-t-[#3f6840] animate-spin" />
           ) : (
             <GoogleIcon />
           )}

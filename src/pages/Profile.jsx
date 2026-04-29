@@ -35,8 +35,8 @@ export default function Profile() {
 
       {/* Avatar + name */}
       <div className="flex items-center gap-4 mb-8">
-        <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center">
-          <User className="h-8 w-8 text-indigo-400" />
+        <div className="w-16 h-16 rounded-full bg-[#e8f5e8] flex items-center justify-center">
+          <User className="h-8 w-8 text-[#7da87b]" />
         </div>
         <div>
           <p className="font-semibold text-gray-900 text-lg">{client?.full_name ?? user?.email}</p>
@@ -53,7 +53,7 @@ export default function Profile() {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="Add phone number"
-            className="mt-1 w-full text-sm text-gray-800 border-0 border-b border-gray-200 pb-1 focus:outline-none focus:border-indigo-400 bg-transparent"
+            className="mt-1 w-full text-sm text-gray-800 border-0 border-b border-gray-200 pb-1 focus:outline-none focus:border-[#7da87b] bg-transparent"
           />
         </div>
       </div>
@@ -63,7 +63,7 @@ export default function Profile() {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="w-full bg-indigo-600 text-white rounded-2xl py-3.5 font-semibold text-sm shadow-md active:scale-[0.98] transition-transform disabled:opacity-50 mb-4"
+        className="w-full bg-[#3f6840] text-white rounded-2xl py-3.5 font-semibold text-sm shadow-md active:scale-[0.98] transition-transform disabled:opacity-50 mb-4"
       >
         {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Changes'}
       </button>

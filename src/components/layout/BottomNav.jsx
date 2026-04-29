@@ -36,7 +36,7 @@ export default function BottomNav() {
           to={to}
           className={({ isActive }) =>
             `flex-1 flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-medium tracking-wide transition-colors ${
-              isActive ? 'text-indigo-600' : 'text-gray-400'
+              isActive ? 'text-[#3f6840]' : 'text-gray-400'
             }`
           }
         >
@@ -46,8 +46,8 @@ export default function BottomNav() {
                 src={icon}
                 trigger={isActive ? 'loop' : 'hover'}
                 size={22}
-                primary={isActive ? '#6366f1' : '#9ca3af'}
-                secondary={isActive ? '#818cf8' : '#d1d5db'}
+                primary={isActive ? '#3f6840' : '#9ca3af'}
+                secondary={isActive ? '#7da87b' : '#d1d5db'}
               />
               {label}
             </>
