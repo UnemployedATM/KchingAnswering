@@ -24,7 +24,7 @@ const CARD_STYLE = {
 };
 
 /* ─── Payment form (inside <Elements>) ───────────────────────────────── */
-function PaymentForm({ clientSecret, breakdown, onSuccess }) {
+function PaymentForm({ clientSecret, breakdown, itemType, itemId, onSuccess }) {
   const stripe   = useStripe();
   const elements = useElements();
   const [paying, setPaying] = useState(false);
@@ -43,9 +43,30 @@ function PaymentForm({ clientSecret, breakdown, onSuccess }) {
         { payment_method: { card } }
       );
       if (stripeError) throw new Error(stripeError.message);
-      if (paymentIntent.status === 'succeeded') {
-        onSuccess(paymentIntent.id);
+      if (paymentIntent.status !== 'succeeded') throw new Error('Payment not completed');
+
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+
+      if (itemType === 'session') {
+        // Create booking via book-class edge function
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/book-class`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${authSession.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ class_session_id: itemId }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? 'Booking failed after payment');
       }
+      // For plans, the membership will be created server-side via webhook in the future.
+      // For now, navigate to success — the studio owner assigns memberships manually.
+
+      onSuccess(paymentIntent.id);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -205,6 +226,8 @@ export default function Checkout() {
           <PaymentForm
             clientSecret={clientSecret}
             breakdown={breakdown}
+            itemType={item_type}
+            itemId={item_id}
             onSuccess={handleSuccess}
           />
         </Elements>
