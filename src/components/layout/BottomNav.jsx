@@ -4,7 +4,7 @@ import LordIcon from '@/components/ui/LordIcon';
 const tabs = [
   {
     to: '/discover',
-    label: 'Discover',
+    label: 'Studios',
     icon: 'https://cdn.lordicon.com/msoeawqm.json',
   },
   {

@@ -30,7 +30,7 @@ export default function Discover() {
 
   return (
     <div className="px-4 pt-6 pb-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">My Studios</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">Studios</h1>
       <p className="text-sm text-gray-500 mb-6">
         {studios.length === 1 ? '1 studio' : `${studios.length} studios`}
       </p>
