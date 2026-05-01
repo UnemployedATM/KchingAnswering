@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import AppShell from '@/components/layout/AppShell';
 import Auth from '@/pages/Auth';
 import Discover from '@/pages/Discover';
+import StudioClasses from '@/pages/StudioClasses';
 import MyPasses from '@/pages/MyPasses';
 import MyBookings from '@/pages/MyBookings';
 import BookClass from '@/pages/BookClass';
@@ -22,10 +23,11 @@ if (pendingStudio) localStorage.setItem('pending_studio_id', pendingStudio);
 function ProtectedRoutes() {
   const { isAuthenticated, loading, user, client, reloadClient } = useAuth();
 
-  // Once logged in, check for a pending studio invite and join it
+  // Once logged in, check for a pending studio invite and join it.
+  // Works for any client regardless of how many studios they're already in.
   useEffect(() => {
     const studioId = localStorage.getItem('pending_studio_id');
-    if (studioId && user && client !== undefined && !client?.studio_id) {
+    if (studioId && user && client !== undefined) {
       localStorage.removeItem('pending_studio_id');
       supabase.rpc('join_studio', { p_studio_id: studioId }).then(() => reloadClient());
     }
@@ -45,11 +47,12 @@ function ProtectedRoutes() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/discover" replace />} />
-        <Route path="discover"        element={<Discover />} />
-        <Route path="passes"          element={<MyPasses />} />
-        <Route path="bookings"        element={<MyBookings />} />
-        <Route path="book/:sessionId" element={<BookClass />} />
-        <Route path="profile"         element={<Profile />} />
+        <Route path="discover"              element={<Discover />} />
+        <Route path="studio/:studioId"     element={<StudioClasses />} />
+        <Route path="passes"               element={<MyPasses />} />
+        <Route path="bookings"             element={<MyBookings />} />
+        <Route path="book/:sessionId"      element={<BookClass />} />
+        <Route path="profile"              element={<Profile />} />
       </Route>
     </Routes>
   );

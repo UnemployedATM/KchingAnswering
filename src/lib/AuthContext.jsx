@@ -16,7 +16,8 @@ const REDIRECT_URL = Capacitor.isNativePlatform()
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(undefined); // undefined = loading
   const [client, setClient]   = useState(undefined);
-  const [studio, setStudio]   = useState(null);
+  const [studio, setStudio]   = useState(null);   // first studio (backward compat)
+  const [studios, setStudios] = useState([]);      // all studios the client has joined
   const [loading, setLoading] = useState(true);
 
   async function loadClient(userId) {
@@ -27,14 +28,19 @@ export function AuthProvider({ children }) {
       .maybeSingle();
     setClient(data ?? null);
 
-    if (data?.studio_id) {
-      const { data: studioData } = await supabase
-        .from('studios')
-        .select('id, name, brand_name, primary_color, logo_url, tagline')
-        .eq('id', data.studio_id)
-        .maybeSingle();
-      setStudio(studioData ?? null);
+    if (data?.id) {
+      // Fetch all studios this client has joined via the membership junction table
+      const { data: memberships } = await supabase
+        .from('client_studio_memberships')
+        .select('studio_id, studios ( id, name, brand_name, primary_color, logo_url, tagline )')
+        .eq('client_id', data.id)
+        .eq('status', 'active');
+
+      const studioList = (memberships ?? []).map(m => m.studios).filter(Boolean);
+      setStudios(studioList);
+      setStudio(studioList[0] ?? null); // keep first for backward compat
     } else {
+      setStudios([]);
       setStudio(null);
     }
   }
@@ -65,6 +71,8 @@ export function AuthProvider({ children }) {
         loadClient(u.id).finally(() => setLoading(false));
       } else {
         setClient(null);
+        setStudios([]);
+        setStudio(null);
         setLoading(false);
       }
     });
@@ -131,7 +139,8 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user,
       client,
-      studio,
+      studio,           // first joined studio (backward compat)
+      studios,          // all joined studios
       loading,
       isAuthenticated:  !!user,
       hasProfile:       !!client,
