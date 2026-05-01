@@ -13,7 +13,7 @@ function dayLabel(dateStr) {
 
 export default function Discover() {
   const navigate = useNavigate();
-  const { client } = useAuth();
+  const { client, studio } = useAuth();
 
   if (client !== undefined && !client?.studio_id) {
     return (
@@ -51,8 +51,12 @@ export default function Discover() {
 
   return (
     <div className="px-4 pt-6 pb-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Discover</h1>
-      <p className="text-sm text-gray-500 mb-6">Upcoming classes at your studio</p>
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">
+        {studio?.brand_name || studio?.name || 'Discover'}
+      </h1>
+      <p className="text-sm text-gray-500 mb-6">
+        {studio?.tagline || 'Upcoming classes at your studio'}
+      </p>
 
       {isLoading && (
         <div className="space-y-3">

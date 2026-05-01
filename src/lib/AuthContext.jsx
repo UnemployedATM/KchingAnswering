@@ -16,6 +16,7 @@ const REDIRECT_URL = Capacitor.isNativePlatform()
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(undefined); // undefined = loading
   const [client, setClient]   = useState(undefined);
+  const [studio, setStudio]   = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function loadClient(userId) {
@@ -23,8 +24,19 @@ export function AuthProvider({ children }) {
       .from('clients')
       .select('id, full_name, email, phone, studio_id, status')
       .eq('auth_user_id', userId)
-      .maybeSingle(); // returns null (not 406) when no client record exists yet
+      .maybeSingle();
     setClient(data ?? null);
+
+    if (data?.studio_id) {
+      const { data: studioData } = await supabase
+        .from('studios')
+        .select('id, name, brand_name, primary_color, logo_url, tagline')
+        .eq('id', data.studio_id)
+        .maybeSingle();
+      setStudio(studioData ?? null);
+    } else {
+      setStudio(null);
+    }
   }
 
   useEffect(() => {
@@ -119,6 +131,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user,
       client,
+      studio,
       loading,
       isAuthenticated:  !!user,
       hasProfile:       !!client,
