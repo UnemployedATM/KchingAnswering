@@ -9,6 +9,8 @@ import StudioClasses from '@/pages/StudioClasses';
 import MyPasses from '@/pages/MyPasses';
 import MyBookings from '@/pages/MyBookings';
 import BookClass from '@/pages/BookClass';
+import Checkout from '@/pages/Checkout';
+import BookingSuccess from '@/pages/BookingSuccess';
 import Profile from '@/pages/Profile';
 import { supabase } from '@/lib/supabase'; // used for join_studio RPC in ProtectedRoutes
 
@@ -52,6 +54,8 @@ function ProtectedRoutes() {
         <Route path="passes"               element={<MyPasses />} />
         <Route path="bookings"             element={<MyBookings />} />
         <Route path="book/:sessionId"      element={<BookClass />} />
+        <Route path="checkout"             element={<Checkout />} />
+        <Route path="booking/success"      element={<BookingSuccess />} />
         <Route path="profile"              element={<Profile />} />
       </Route>
     </Routes>
