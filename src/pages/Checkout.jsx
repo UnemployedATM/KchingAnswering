@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import {
@@ -24,7 +24,7 @@ const CARD_STYLE = {
 };
 
 /* ─── Payment form (inside <Elements>) ───────────────────────────────── */
-function PaymentForm({ clientSecret, breakdown, itemType, itemId, onSuccess }) {
+function PaymentForm({ clientSecret, breakdown, itemType, bookingId, slotLabel, onSuccess }) {
   const stripe   = useStripe();
   const elements = useElements();
   const [paying, setPaying] = useState(false);
@@ -47,24 +47,26 @@ function PaymentForm({ clientSecret, breakdown, itemType, itemId, onSuccess }) {
 
       const { data: { session: authSession } } = await supabase.auth.getSession();
 
-      if (itemType === 'session') {
-        // Create booking via book-class edge function
+      if (itemType === 'session' && bookingId) {
+        // Confirm the pending booking that was created before checkout
         const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/book-class`,
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/confirm-booking`,
           {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${authSession.access_token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ class_session_id: itemId }),
+            body: JSON.stringify({
+              booking_id:        bookingId,
+              payment_intent_id: paymentIntent.id,
+            }),
           }
         );
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? 'Booking failed after payment');
+        if (!res.ok) throw new Error(data.error ?? 'Booking confirmation failed after payment');
       }
-      // For plans, the membership will be created server-side via webhook in the future.
-      // For now, navigate to success — the studio owner assigns memberships manually.
+      // For plans, membership creation is handled server-side via webhook.
 
       onSuccess(paymentIntent.id);
     } catch (err) {
@@ -79,7 +81,12 @@ function PaymentForm({ clientSecret, breakdown, itemType, itemId, onSuccess }) {
       {/* Cost breakdown */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
         <p className="font-semibold text-gray-900 mb-1">{breakdown.item_name}</p>
-        <p className="text-xs text-gray-400 mb-4">{breakdown.item_description}</p>
+        <p className="text-xs text-gray-400 mb-1">{breakdown.item_description}</p>
+        {slotLabel && (
+          <p className="text-xs font-medium text-green-700 bg-green-50 rounded-lg px-2.5 py-1 mb-3 inline-block">
+            🎯 {slotLabel}
+          </p>
+        )}
 
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
@@ -129,11 +136,61 @@ function PaymentForm({ clientSecret, breakdown, itemType, itemId, onSuccess }) {
       <button
         type="submit"
         disabled={paying || !stripe}
-        className="w-full bg-[#3f6840] text-white rounded-2xl py-4 font-semibold text-base shadow-md active:scale-[0.98] transition-transform disabled:opacity-50"
+        className="w-full text-white rounded-xl py-4 font-semibold text-base shadow-md active:scale-[0.98] transition-transform disabled:opacity-50"
+        style={{ backgroundColor: 'var(--brand)' }}
       >
         {paying ? 'Processing…' : `Pay $${breakdown.total_mxn} MXN`}
       </button>
     </form>
+  );
+}
+
+/* ─── Countdown timer bar ─────────────────────────────────────────────── */
+function CountdownBar({ expiresAt, studioId, navigate }) {
+  const [secondsLeft, setSecondsLeft] = useState(null);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const end = new Date(expiresAt).getTime();
+
+    function tick() {
+      const left = Math.max(0, Math.floor((end - Date.now()) / 1000));
+      setSecondsLeft(left);
+      if (left === 0) {
+        clearInterval(timerRef.current);
+        navigate(`/studio/${studioId}`, { replace: true, state: { expiredMessage: true } });
+      }
+    }
+
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [expiresAt, studioId, navigate]);
+
+  if (secondsLeft === null) return null;
+
+  const mins = Math.floor(secondsLeft / 60);
+  const secs = String(secondsLeft % 60).padStart(2, '0');
+  const pct  = Math.min(100, (secondsLeft / 300) * 100); // 300s = 5min
+  const urgent = secondsLeft < 60;
+  const shaking = secondsLeft < 30 && secondsLeft > 0;
+
+  return (
+    <div
+      className={`rounded-xl px-4 py-2.5 mb-5 flex items-center gap-3 ${urgent ? 'bg-red-50' : 'bg-amber-50'}`}
+      style={shaking ? { animation: 'shake 0.3s ease infinite' } : {}}
+    >
+      <span className={`text-sm font-semibold ${urgent ? 'text-red-600' : 'text-amber-700'}`}>
+        ⏱ {mins}:{secs} to complete payment
+      </span>
+      <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-1000 ${urgent ? 'bg-red-400' : 'bg-amber-400'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -142,22 +199,30 @@ export default function Checkout() {
   const [params]   = useSearchParams();
   const navigate   = useNavigate();
 
-  const item_type  = params.get('item_type');  // 'session' | 'plan'
+  const item_type  = params.get('item_type');   // 'session' | 'plan'
   const item_id    = params.get('item_id');
   const studio_id  = params.get('studio_id');
+  const slot_id    = params.get('slot_id') || null;
+  const booking_id = params.get('booking_id') || null;
+  const expires_at = params.get('expires_at') || null;
 
-  const [loading,      setLoading]      = useState(true);
-  const [error,        setError]        = useState(null);
-  const [clientSecret, setClientSecret] = useState(null);
-  const [publishableKey, setPubKey]     = useState(null);
-  const [breakdown,    setBreakdown]    = useState(null);
-  const [stripePromise, setStripeP]     = useState(null);
+  const [loading,       setLoading]      = useState(true);
+  const [error,         setError]        = useState(null);
+  const [clientSecret,  setClientSecret] = useState(null);
+  const [breakdown,     setBreakdown]    = useState(null);
+  const [stripePromise, setStripeP]      = useState(null);
+  const [slotLabel,     setSlotLabel]    = useState(null);
 
   useEffect(() => {
     if (!item_type || !item_id || !studio_id) {
       setError('Missing checkout parameters.');
       setLoading(false);
       return;
+    }
+    // Load slot label if this is a circuit booking
+    if (slot_id) {
+      supabase.from('session_slots').select('slot_label').eq('id', slot_id).single()
+        .then(({ data }) => { if (data) setSlotLabel(data.slot_label); });
     }
 
     async function init() {
@@ -178,7 +243,6 @@ export default function Checkout() {
         if (!res.ok) throw new Error(data.error ?? 'Failed to create payment');
 
         setClientSecret(data.client_secret);
-        setPubKey(data.publishable_key);
         setBreakdown(data.breakdown);
         setStripeP(loadStripe(data.publishable_key, { stripeAccount: undefined }));
       } catch (err) {
@@ -191,10 +255,10 @@ export default function Checkout() {
   }, [item_type, item_id, studio_id]);
 
   function handleSuccess(paymentIntentId) {
-    navigate(
-      `/booking/success?payment_intent_id=${paymentIntentId}&item_type=${item_type}&studio_id=${studio_id}`,
-      { replace: true }
-    );
+    const q = new URLSearchParams({ item_type, studio_id });
+    if (booking_id) q.set('booking_id', booking_id);
+    if (paymentIntentId) q.set('payment_intent_id', paymentIntentId);
+    navigate(`/booking/success?${q.toString()}`, { replace: true });
   }
 
   return (
@@ -207,7 +271,16 @@ export default function Checkout() {
       </button>
 
       <h1 className="text-2xl font-bold text-gray-900 mb-1">Checkout</h1>
-      <p className="text-sm text-gray-500 mb-6">Review and pay for your booking</p>
+      <p className="text-sm text-gray-500 mb-4">Review and pay for your booking</p>
+
+      {/* Countdown for ghost-booked sessions */}
+      {expires_at && item_type === 'session' && (
+        <CountdownBar
+          expiresAt={expires_at}
+          studioId={studio_id}
+          navigate={navigate}
+        />
+      )}
 
       {loading && (
         <div className="space-y-4">
@@ -227,7 +300,8 @@ export default function Checkout() {
             clientSecret={clientSecret}
             breakdown={breakdown}
             itemType={item_type}
-            itemId={item_id}
+            bookingId={booking_id}
+            slotLabel={slotLabel}
             onSuccess={handleSuccess}
           />
         </Elements>

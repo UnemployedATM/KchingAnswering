@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { CheckCircle2, CalendarPlus, ListChecks } from 'lucide-react';
 
 export default function BookingSuccess() {
   const [params]   = useSearchParams();
   const navigate   = useNavigate();
+  const { client } = useAuth();
 
-  const paymentIntentId = params.get('payment_intent_id');
-  const item_type       = params.get('item_type');
-  const studio_id       = params.get('studio_id');
+  const bookingId = params.get('booking_id');
+  const item_type = params.get('item_type');
+  const studio_id = params.get('studio_id');
 
   const [booking, setBooking] = useState(null);
   const [studio,  setStudio]  = useState(null);
+  const [loyalty, setLoyalty]  = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,25 +30,36 @@ export default function BookingSuccess() {
         setStudio(data);
       }
 
-      // Fetch the booking linked to this payment_intent if available
-      if (paymentIntentId) {
+      // Fetch the booking by id
+      if (bookingId) {
         const { data } = await supabase
           .from('bookings')
           .select('*, class_sessions ( starts_at, class_types ( name ) )')
-          .eq('payment_intent_id', paymentIntentId)
+          .eq('id', bookingId)
           .maybeSingle();
         setBooking(data);
+      }
+
+      // Fetch loyalty progress for this studio
+      if (studio_id && client?.id) {
+        const { data } = await supabase
+          .from('client_loyalty')
+          .select('stamps, stamps_goal')
+          .eq('client_id', client.id)
+          .eq('studio_id', studio_id)
+          .maybeSingle();
+        setLoyalty(data);
       }
 
       setLoading(false);
     }
     load();
-  }, [paymentIntentId, studio_id]);
+  }, [bookingId, studio_id, client?.id]);
 
-  const color = studio?.primary_color ?? '#3f6840';
+  const color = studio?.primary_color ?? '#ffa504';
   const studioName = studio?.brand_name || studio?.name || 'your studio';
 
-  // Try to get session info from booking
+  // Session info from booking
   const sessionName = booking?.class_sessions?.class_types?.name;
   const sessionDate = booking?.class_sessions?.starts_at
     ? new Date(booking.class_sessions.starts_at)
@@ -53,7 +67,6 @@ export default function BookingSuccess() {
 
   function handleAddToCalendar() {
     if (!sessionDate || !sessionName) return;
-    // Generate .ics file for web and Capacitor apps
     const start = sessionDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
     const end   = new Date(sessionDate.getTime() + 60 * 60 * 1000)
       .toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -78,12 +91,18 @@ export default function BookingSuccess() {
 
   return (
     <div className="flex flex-col items-center px-6 pt-16 pb-12 text-center">
-      {/* Animated checkmark */}
-      <div
-        className="w-24 h-24 rounded-full flex items-center justify-center mb-6 animate-[pop_0.4s_ease-out]"
-        style={{ backgroundColor: `${color}20` }}
-      >
-        <CheckCircle2 className="w-14 h-14" style={{ color }} />
+      {/* Animated checkmark with ripple */}
+      <div className="relative mb-6">
+        <div
+          className="absolute inset-0 rounded-full animate-[pop_0.6s_ease-out]"
+          style={{ backgroundColor: `${color}10`, transform: 'scale(1.4)' }}
+        />
+        <div
+          className="relative w-24 h-24 rounded-full flex items-center justify-center animate-[pop_0.4s_ease-out]"
+          style={{ backgroundColor: `${color}20` }}
+        >
+          <CheckCircle2 className="w-14 h-14" style={{ color }} />
+        </div>
       </div>
 
       {loading ? (
@@ -93,7 +112,7 @@ export default function BookingSuccess() {
         </div>
       ) : (
         <>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">You're all set! 🎉</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">You're all set!</h1>
           {sessionName ? (
             <p className="text-sm text-gray-500 mb-1">
               <span className="font-medium text-gray-700">{sessionName}</span> at {studioName}
@@ -109,7 +128,7 @@ export default function BookingSuccess() {
           )}
 
           {sessionDate && (
-            <p className="text-xs text-gray-400 mb-8">
+            <p className="text-xs text-gray-400 mb-4">
               {sessionDate.toLocaleDateString('es-MX', {
                 weekday: 'long',
                 month:   'long',
@@ -119,7 +138,14 @@ export default function BookingSuccess() {
               })}
             </p>
           )}
-          {!sessionDate && <div className="mb-8" />}
+          {!sessionDate && <div className="mb-4" />}
+
+          {/* Loyalty progress */}
+          {loyalty && item_type === 'session' && (
+            <div className="w-full max-w-xs mb-6 animate-[pageEnter_0.4s_ease-out_0.3s_both]">
+              <LoyaltyCard stamps={loyalty.stamps} goal={loyalty.stamps_goal} color={color} />
+            </div>
+          )}
         </>
       )}
 
@@ -135,12 +161,15 @@ export default function BookingSuccess() {
         )}
 
         <button
-          onClick={() => navigate('/bookings', { replace: true })}
+          onClick={() => navigate(
+            item_type === 'plan' ? '/passes' : '/bookings',
+            { replace: true }
+          )}
           className="flex items-center justify-center gap-2 w-full text-white rounded-2xl py-3.5 font-semibold text-sm shadow-md active:scale-[0.98] transition-transform"
           style={{ backgroundColor: color }}
         >
           <ListChecks className="w-4 h-4" />
-          See my schedule
+          {item_type === 'plan' ? 'See my passes' : 'See my schedule'}
         </button>
       </div>
 
@@ -148,6 +177,55 @@ export default function BookingSuccess() {
       <p className="text-xs text-gray-400 mt-8 max-w-xs">
         A confirmation has been recorded. Check your bookings tab for details.
       </p>
+    </div>
+  );
+}
+
+/* ─── Loyalty punch card ─────────────────────────────────────────── */
+function LoyaltyCard({ stamps, goal, color }) {
+  const display  = Math.min(stamps, goal);
+  const complete = stamps >= goal;
+
+  return (
+    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+      {complete ? (
+        <div className="text-center">
+          <p className="text-sm font-semibold text-amber-600 mb-1">
+            You earned a reward!
+          </p>
+          <p className="text-xs text-gray-500">
+            {goal} classes completed — check for special offers from this studio
+          </p>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            Punch card
+          </p>
+          <div className="flex items-center justify-center gap-1.5 mb-2">
+            {Array.from({ length: goal }).map((_, i) => (
+              <div
+                key={i}
+                className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-500"
+                style={{
+                  backgroundColor: i < display ? color : 'transparent',
+                  border: `2px solid ${i < display ? color : '#d1d5db'}`,
+                  animationDelay: i < display ? `${i * 100}ms` : undefined,
+                }}
+              >
+                {i < display && (
+                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 text-center">
+            {display} of {goal} classes — {goal - display} more to earn a reward
+          </p>
+        </>
+      )}
     </div>
   );
 }

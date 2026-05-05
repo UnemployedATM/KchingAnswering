@@ -8,10 +8,11 @@ import Discover from '@/pages/Discover';
 import StudioClasses from '@/pages/StudioClasses';
 import MyPasses from '@/pages/MyPasses';
 import MyBookings from '@/pages/MyBookings';
-import BookClass from '@/pages/BookClass';
 import Checkout from '@/pages/Checkout';
 import BookingSuccess from '@/pages/BookingSuccess';
 import Profile from '@/pages/Profile';
+import { Toaster } from '@/components/ui/Toast';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { supabase } from '@/lib/supabase'; // used for join_studio RPC in ProtectedRoutes
 
 const queryClient = new QueryClient({
@@ -38,7 +39,7 @@ function ProtectedRoutes() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-[#3f6840] animate-spin" />
+        <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-[#ffa504] animate-spin" />
       </div>
     );
   }
@@ -53,7 +54,6 @@ function ProtectedRoutes() {
         <Route path="studio/:studioId"     element={<StudioClasses />} />
         <Route path="passes"               element={<MyPasses />} />
         <Route path="bookings"             element={<MyBookings />} />
-        <Route path="book/:sessionId"      element={<BookClass />} />
         <Route path="checkout"             element={<Checkout />} />
         <Route path="booking/success"      element={<BookingSuccess />} />
         <Route path="profile"              element={<Profile />} />
@@ -83,23 +83,26 @@ function AuthCallback() {
 
   return (
     <div className="flex items-center justify-center h-full">
-      <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-[#3f6840] animate-spin" />
+      <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-[#ffa504] animate-spin" />
     </div>
   );
 }
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/auth"          element={<AuthPage />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route path="/*"             element={<ProtectedRoutes />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/auth"          element={<AuthPage />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/*"             element={<ProtectedRoutes />} />
+            </Routes>
+            <Toaster />
+          </BrowserRouter>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

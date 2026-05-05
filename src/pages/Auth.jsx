@@ -12,11 +12,8 @@ export default function Auth() {
     try {
       setError(null);
       setLoading(provider);
-      console.log('[Auth] signing in with', provider);
       await fn();
-      console.log('[Auth] signInWithOAuth resolved (redirect should be happening)');
     } catch (e) {
-      console.error('[Auth] sign-in error:', e);
       setError(e.message ?? 'Sign in failed. Please try again.');
     } finally {
       setLoading(null);
@@ -24,14 +21,17 @@ export default function Auth() {
   }
 
   return (
-    <div className="min-h-full flex flex-col items-center justify-center px-6 py-12 bg-gradient-to-b from-[#f1f7f1] to-white">
+    <div className="min-h-full flex flex-col items-center justify-center px-6 py-12 bg-gradient-to-b from-[#fef8ec] to-[#f5f2ee]">
       {/* Logo / wordmark */}
       <div className="mb-10 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-[#3f6840] flex items-center justify-center mx-auto mb-4 shadow-lg">
+        <div
+          className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"
+          style={{ backgroundColor: 'var(--brand)' }}
+        >
           <span className="text-white text-2xl font-bold">S</span>
         </div>
         <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Serenity</h1>
-        <p className="text-gray-500 mt-1 text-sm">Book your next class</p>
+        <p className="text-gray-500 mt-1 text-sm font-body">Book your next class</p>
       </div>
 
       {/* Sign-in buttons */}
@@ -39,21 +39,20 @@ export default function Auth() {
         <button
           onClick={() => handle('google', signInWithGoogle)}
           disabled={!!loading}
-          className="w-full flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 shadow-sm active:scale-95 transition-transform disabled:opacity-50"
         >
           {loading === 'google' ? (
-            <span className="h-5 w-5 rounded-full border-2 border-gray-300 border-t-[#3f6840] animate-spin" />
+            <span className="h-5 w-5 rounded-full border-2 border-gray-300 border-t-[var(--brand)] animate-spin" />
           ) : (
             <GoogleIcon />
           )}
           Continue with Google
         </button>
 
-        {/* Apple sign-in — shown on all platforms (required by App Store) */}
         <button
           onClick={() => handle('apple', signInWithApple)}
           disabled={!!loading}
-          className="w-full flex items-center justify-center gap-3 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-3 rounded-lg bg-black px-4 py-3 text-sm font-semibold text-white shadow-sm active:scale-95 transition-transform disabled:opacity-50"
         >
           {loading === 'apple' ? (
             <span className="h-5 w-5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
@@ -65,10 +64,10 @@ export default function Auth() {
       </div>
 
       {error && (
-        <p className="mt-6 text-sm text-red-500 text-center max-w-xs">{error}</p>
+        <p className="mt-6 text-sm text-red-500 text-center max-w-xs font-body">{error}</p>
       )}
 
-      <p className="mt-10 text-xs text-gray-400 text-center px-4">
+      <p className="mt-10 text-xs text-[#817568] text-center px-4 font-body">
         By continuing you agree to our Terms of Service and Privacy Policy.
       </p>
     </div>
