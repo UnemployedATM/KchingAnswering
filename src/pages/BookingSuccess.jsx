@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { CheckCircle2, CalendarPlus, ListChecks } from 'lucide-react';
+import { Check, ArrowRight } from 'lucide-react';
+import { format } from 'date-fns';
 
 export default function BookingSuccess() {
   const [params]   = useSearchParams();
@@ -12,15 +13,15 @@ export default function BookingSuccess() {
   const bookingId = params.get('booking_id');
   const item_type = params.get('item_type');
   const studio_id = params.get('studio_id');
+  const piId      = params.get('payment_intent_id');
 
   const [booking, setBooking] = useState(null);
   const [studio,  setStudio]  = useState(null);
-  const [loyalty, setLoyalty]  = useState(null);
+  const [loyalty, setLoyalty] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      // Fetch studio name
       if (studio_id) {
         const { data } = await supabase
           .from('studios')
@@ -29,18 +30,14 @@ export default function BookingSuccess() {
           .single();
         setStudio(data);
       }
-
-      // Fetch the booking by id
       if (bookingId) {
         const { data } = await supabase
           .from('bookings')
-          .select('*, class_sessions ( starts_at, class_types ( name ) )')
+          .select('id, status, class_sessions ( starts_at, class_types ( name ) )')
           .eq('id', bookingId)
           .maybeSingle();
         setBooking(data);
       }
-
-      // Fetch loyalty progress for this studio
       if (studio_id && client?.id) {
         const { data } = await supabase
           .from('client_loyalty')
@@ -50,182 +47,153 @@ export default function BookingSuccess() {
           .maybeSingle();
         setLoyalty(data);
       }
-
       setLoading(false);
     }
     load();
   }, [bookingId, studio_id, client?.id]);
 
-  const color = studio?.primary_color ?? '#ffa504';
-  const studioName = studio?.brand_name || studio?.name || 'your studio';
-
-  // Session info from booking
-  const sessionName = booking?.class_sessions?.class_types?.name;
-  const sessionDate = booking?.class_sessions?.starts_at
+  const studioName   = studio?.brand_name || studio?.name || 'your studio';
+  const sessionName  = booking?.class_sessions?.class_types?.name;
+  const sessionDate  = booking?.class_sessions?.starts_at
     ? new Date(booking.class_sessions.starts_at)
     : null;
-
-  function handleAddToCalendar() {
-    if (!sessionDate || !sessionName) return;
-    const start = sessionDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const end   = new Date(sessionDate.getTime() + 60 * 60 * 1000)
-      .toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    const ics = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'BEGIN:VEVENT',
-      `SUMMARY:${sessionName} — ${studioName}`,
-      `DTSTART:${start}`,
-      `DTEND:${end}`,
-      'END:VEVENT',
-      'END:VCALENDAR',
-    ].join('\r\n');
-    const blob = new Blob([ics], { type: 'text/calendar' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = 'class.ics';
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  const shortId      = bookingId ? `#${bookingId.slice(0, 8).toUpperCase()}` : (piId ? `#${piId.slice(-8).toUpperCase()}` : '—');
+  const planName     = item_type === 'plan' ? 'Membership' : (sessionName ?? 'Class booking');
 
   return (
-    <div className="flex flex-col items-center px-6 pt-16 pb-12 text-center">
-      {/* Animated checkmark with ripple */}
-      <div className="relative mb-6">
+    <div
+      className="min-h-full flex flex-col items-center"
+      style={{ background: 'linear-gradient(180deg, #B8C5CD 0%, #C9B89A 60%, #C4A87A 100%)' }}
+    >
+      {/* Spacer */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 w-full max-w-sm">
+
+        {/* Checkmark circle */}
         <div
-          className="absolute inset-0 rounded-full animate-[pop_0.6s_ease-out]"
-          style={{ backgroundColor: `${color}10`, transform: 'scale(1.4)' }}
-        />
-        <div
-          className="relative w-24 h-24 rounded-full flex items-center justify-center animate-[pop_0.4s_ease-out]"
-          style={{ backgroundColor: `${color}20` }}
+          className="w-20 h-20 rounded-full flex items-center justify-center mb-8 animate-[pop_0.4s_ease-out]"
+          style={{ backgroundColor: 'rgba(255,255,255,0.25)' }}
         >
-          <CheckCircle2 className="w-14 h-14" style={{ color }} />
+          <Check className="w-10 h-10 text-white" strokeWidth={2.5} />
         </div>
-      </div>
 
-      {loading ? (
-        <div className="space-y-2 w-full max-w-xs">
-          <div className="h-6 rounded-xl bg-gray-100 animate-pulse mx-auto w-3/4" />
-          <div className="h-4 rounded-xl bg-gray-100 animate-pulse mx-auto w-1/2" />
-        </div>
-      ) : (
-        <>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">You're all set!</h1>
-          {sessionName ? (
-            <p className="text-sm text-gray-500 mb-1">
-              <span className="font-medium text-gray-700">{sessionName}</span> at {studioName}
-            </p>
-          ) : item_type === 'plan' ? (
-            <p className="text-sm text-gray-500 mb-1">
-              Your pass for <span className="font-medium text-gray-700">{studioName}</span> is ready to use
-            </p>
-          ) : (
-            <p className="text-sm text-gray-500 mb-1">
-              Your booking at <span className="font-medium text-gray-700">{studioName}</span> is confirmed
-            </p>
-          )}
-
-          {sessionDate && (
-            <p className="text-xs text-gray-400 mb-4">
-              {sessionDate.toLocaleDateString('es-MX', {
-                weekday: 'long',
-                month:   'long',
-                day:     'numeric',
-                hour:    '2-digit',
-                minute:  '2-digit',
-              })}
-            </p>
-          )}
-          {!sessionDate && <div className="mb-4" />}
-
-          {/* Loyalty progress */}
-          {loyalty && item_type === 'session' && (
-            <div className="w-full max-w-xs mb-6 animate-[pageEnter_0.4s_ease-out_0.3s_both]">
-              <LoyaltyCard stamps={loyalty.stamps} goal={loyalty.stamps_goal} color={color} />
-            </div>
-          )}
-        </>
-      )}
-
-      <div className="flex flex-col gap-3 w-full max-w-sm">
-        {sessionDate && (
-          <button
-            onClick={handleAddToCalendar}
-            className="flex items-center justify-center gap-2 w-full border border-gray-200 text-gray-700 rounded-2xl py-3.5 font-medium text-sm active:scale-[0.98] transition-transform"
+        {/* Heading */}
+        {!loading && (
+          <h1
+            className="font-serif font-bold text-white text-center mb-2 leading-tight"
+            style={{ fontSize: 34 }}
           >
-            <CalendarPlus className="w-4 h-4" />
-            Add to Calendar
-          </button>
+            {item_type === 'plan'
+              ? `Welcome to\nthe Sanctuary`
+              : `You're booked!`}
+          </h1>
+        )}
+        {loading && (
+          <div className="h-10 w-48 rounded-xl animate-pulse mb-2" style={{ backgroundColor: 'rgba(255,255,255,0.3)' }} />
         )}
 
+        {/* Details card */}
+        <div className="w-full bg-white rounded-2xl p-5 shadow-xl mt-6 mb-6">
+          {!loading ? (
+            <>
+              <p className="text-sm text-center mb-4" style={{ color: 'var(--muted)' }}>
+                Your {item_type === 'plan' ? 'payment was successful. You are now a member of' : 'booking at'}
+                {' '}<span className="font-semibold" style={{ color: 'var(--ink)' }}>{studioName}</span>
+                {item_type === 'plan' ? '.' : ' is confirmed.'}
+              </p>
+
+              <div className="border-t border-[var(--border)] pt-4 space-y-3">
+                <DetailRow label="STATUS">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-green-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                    {item_type === 'plan' ? 'Active Member' : 'Confirmed'}
+                  </span>
+                </DetailRow>
+                <DetailRow label="PLAN">
+                  <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{planName}</span>
+                </DetailRow>
+                {sessionDate && (
+                  <DetailRow label="DATE">
+                    <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
+                      {format(sessionDate, 'EEE, MMM d · h:mm a')}
+                    </span>
+                  </DetailRow>
+                )}
+                <DetailRow label="ORDER ID">
+                  <span className="text-sm font-mono font-semibold" style={{ color: 'var(--ink)' }}>{shortId}</span>
+                </DetailRow>
+              </div>
+
+              {/* Loyalty card */}
+              {loyalty && item_type === 'session' && (
+                <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--muted)' }}>
+                    Punch card
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    {Array.from({ length: loyalty.stamps_goal }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-6 h-6 rounded-full flex items-center justify-center"
+                        style={{
+                          backgroundColor: i < loyalty.stamps ? 'var(--ink)' : 'transparent',
+                          border: `2px solid ${i < loyalty.stamps ? 'var(--ink)' : 'var(--border)'}`,
+                        }}
+                      >
+                        {i < loyalty.stamps && (
+                          <Check className="w-3 h-3 text-white" strokeWidth={3} />
+                        )}
+                      </div>
+                    ))}
+                    <span className="text-xs ml-1" style={{ color: 'var(--muted)' }}>
+                      {loyalty.stamps}/{loyalty.stamps_goal}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="h-4 rounded-lg animate-pulse" />
+              <div className="h-4 rounded-lg animate-pulse w-3/4" />
+            </div>
+          )}
+        </div>
+
+        {/* Primary CTA */}
         <button
           onClick={() => navigate(
-            item_type === 'plan' ? '/passes' : '/bookings',
+            item_type === 'plan'
+              ? `/studio/${studio_id}`
+              : '/bookings',
             { replace: true }
           )}
-          className="flex items-center justify-center gap-2 w-full text-white rounded-2xl py-3.5 font-semibold text-sm shadow-md active:scale-[0.98] transition-transform"
-          style={{ backgroundColor: color }}
+          className="btn-black w-full mb-4"
         >
-          <ListChecks className="w-4 h-4" />
-          {item_type === 'plan' ? 'See my passes' : 'See my schedule'}
+          {item_type === 'plan' ? 'Book Your First Class' : 'View My Bookings'}
+          <ArrowRight className="w-4 h-4" />
+        </button>
+
+        {/* Secondary */}
+        <button
+          onClick={() => navigate('/discover', { replace: true })}
+          className="text-xs font-semibold tracking-widest uppercase text-white/70 py-2"
+        >
+          Return to Dashboard
         </button>
       </div>
-
-      {/* Soft note */}
-      <p className="text-xs text-gray-400 mt-8 max-w-xs">
-        A confirmation has been recorded. Check your bookings tab for details.
-      </p>
     </div>
   );
 }
 
-/* ─── Loyalty punch card ─────────────────────────────────────────── */
-function LoyaltyCard({ stamps, goal, color }) {
-  const display  = Math.min(stamps, goal);
-  const complete = stamps >= goal;
-
+function DetailRow({ label, children }) {
   return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-      {complete ? (
-        <div className="text-center">
-          <p className="text-sm font-semibold text-amber-600 mb-1">
-            You earned a reward!
-          </p>
-          <p className="text-xs text-gray-500">
-            {goal} classes completed — check for special offers from this studio
-          </p>
-        </div>
-      ) : (
-        <>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-            Punch card
-          </p>
-          <div className="flex items-center justify-center gap-1.5 mb-2">
-            {Array.from({ length: goal }).map((_, i) => (
-              <div
-                key={i}
-                className="w-5 h-5 rounded-full flex items-center justify-center transition-all duration-500"
-                style={{
-                  backgroundColor: i < display ? color : 'transparent',
-                  border: `2px solid ${i < display ? color : '#d1d5db'}`,
-                  animationDelay: i < display ? `${i * 100}ms` : undefined,
-                }}
-              >
-                {i < display && (
-                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-gray-500 text-center">
-            {display} of {goal} classes — {goal - display} more to earn a reward
-          </p>
-        </>
-      )}
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-xs font-semibold tracking-wider uppercase shrink-0" style={{ color: 'var(--muted)' }}>
+        {label}
+      </span>
+      <div className="flex-1 flex justify-end">
+        {children}
+      </div>
     </div>
   );
 }

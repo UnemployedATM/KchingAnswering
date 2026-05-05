@@ -3,19 +3,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { format, isPast, differenceInHours } from 'date-fns';
-import { X, RefreshCw, CreditCard, Star, CalendarDays } from 'lucide-react';
+import { X, RefreshCw, CreditCard, Star, Calendar, Clock, MoreHorizontal, CalendarDays } from 'lucide-react';
 import RatingPrompt from '@/components/RatingPrompt';
 import { toast } from '@/components/ui/Toast';
 
-const statusColor = {
-  confirmed:          'bg-green-50 text-green-700',
-  cancelled:          'bg-gray-100 text-gray-500',
-  cancelled_credited: 'bg-blue-50 text-blue-600',
-  waitlisted:         'bg-yellow-50 text-yellow-700',
-  no_show:            'bg-red-50 text-red-600',
-  pending:            'bg-amber-50 text-amber-700',
+const statusDot = {
+  confirmed:          'bg-green-500',
+  cancelled:          'bg-gray-400',
+  cancelled_credited: 'bg-blue-400',
+  waitlisted:         'bg-yellow-400',
+  no_show:            'bg-red-400',
+  pending:            'bg-amber-400',
 };
-
 const statusLabel = {
   confirmed:          'Confirmed',
   cancelled:          'Cancelled',
@@ -25,12 +24,25 @@ const statusLabel = {
   pending:            'Pending',
 };
 
+// Class type icon placeholders (use initials in a circle)
+function ClassIcon({ name, color }) {
+  return (
+    <div
+      className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-sm font-bold"
+      style={{ backgroundColor: color ?? 'var(--subtle)', color: color ? '#fff' : 'var(--muted)' }}
+    >
+      {(name ?? 'C')[0].toUpperCase()}
+    </div>
+  );
+}
+
 export default function MyBookings() {
   const queryClient = useQueryClient();
   const { client }  = useAuth();
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelling,   setCancelling]   = useState(false);
   const [cancelError,  setCancelError]  = useState(null);
+  const [menuOpen,     setMenuOpen]     = useState(null); // bookingId of open menu
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ['client_bookings'],
@@ -62,20 +74,17 @@ export default function MyBookings() {
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cancel-booking`,
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${auth.access_token}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${auth.access_token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ booking_id: cancelTarget.id, mode }),
         }
       );
       const data = await res.json();
       if (!res.ok) {
-        if (data.error === 'WITHIN_24H_WINDOW') {
-          setCancelError('Cancellations are not permitted within 24 hours of the session.');
-        } else {
-          setCancelError(data.error ?? 'Could not cancel. Please contact support.');
-        }
+        setCancelError(
+          data.error === 'WITHIN_24H_WINDOW'
+            ? 'Cancellations are not permitted within 24 hours of the session.'
+            : (data.error ?? 'Could not cancel. Please contact support.')
+        );
         return;
       }
       toast.success(mode === 'credit' ? 'Converted to studio credit' : 'Refund processing');
@@ -89,7 +98,6 @@ export default function MyBookings() {
     }
   }
 
-  // Sections
   const livePending = bookings.filter(b =>
     b.status === 'pending' && b.expires_at && new Date(b.expires_at) > new Date()
   );
@@ -103,102 +111,116 @@ export default function MyBookings() {
     (b.status === 'confirmed' && (!b.class_sessions?.starts_at || isPast(new Date(b.class_sessions.starts_at))))
   );
 
-  // Find the nearest upcoming booking (smallest starts_at in the future)
-  const nearestUpcomingId = upcoming.length > 0
-    ? [...upcoming].sort((a, b) =>
-        new Date(a.class_sessions?.starts_at ?? 0) - new Date(b.class_sessions?.starts_at ?? 0)
-      )[0]?.id
-    : null;
+  const unratedCount = past.filter(b => {
+    const rating = Array.isArray(b.session_ratings) ? b.session_ratings[0] : b.session_ratings;
+    return b.status === 'confirmed' && !rating && b.class_sessions?.starts_at && isPast(new Date(b.class_sessions.starts_at));
+  }).length;
 
   function BookingCard({ b }) {
-    const s          = b.class_sessions;
-    const isFuture   = s?.starts_at && !isPast(new Date(s.starts_at));
-    const hoursUntil = s?.starts_at ? differenceInHours(new Date(s.starts_at), new Date()) : 0;
-    const within24h  = hoursUntil < 24;
-    const canCancel  = b.status === 'confirmed' && isFuture;
-    const isNearest  = b.id === nearestUpcomingId;
-
-    // Rating: session_ratings comes as an array (1:many from PostgREST)
-    const existingRating = Array.isArray(b.session_ratings)
-      ? b.session_ratings[0]
-      : b.session_ratings;
-
-    // Show rating prompt if: past confirmed, class ended, no rating yet
-    const isPastConfirmed = b.status === 'confirmed' && !isFuture;
-    const classEnded = s?.starts_at && isPast(new Date(s.starts_at));
-    const canRate = isPastConfirmed && classEnded && !existingRating;
+    const s            = b.class_sessions;
+    const isFuture     = s?.starts_at && !isPast(new Date(s.starts_at));
+    const hoursUntil   = s?.starts_at ? differenceInHours(new Date(s.starts_at), new Date()) : 0;
+    const within24h    = hoursUntil < 24;
+    const canCancel    = b.status === 'confirmed' && isFuture && !within24h;
+    const classColor   = s?.class_types?.color ?? null;
+    const existingRating = Array.isArray(b.session_ratings) ? b.session_ratings[0] : b.session_ratings;
+    const canRate      = b.status === 'confirmed' && !isFuture && s?.starts_at && isPast(new Date(s.starts_at)) && !existingRating;
 
     return (
-      <div className={`bg-white rounded-2xl p-4 shadow-sm border transition-shadow ${
-        isNearest ? 'border-l-4 border-gray-100 shadow-md' : 'border border-gray-100'
-      }`} style={isNearest ? { borderLeftColor: s?.class_types?.color ?? 'var(--brand)' } : {}}>
-        <div className="flex items-start gap-3">
-          <div
-            className={`w-1 self-stretch rounded-full shrink-0 ${isNearest ? 'animate-pulse' : ''}`}
-            style={{ backgroundColor: s?.class_types?.color ?? '#6366f1' }}
-          />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-semibold text-gray-900 truncate">
-                {s?.class_types?.name ?? 'Class'}
-              </p>
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize shrink-0 ${statusColor[b.status] ?? 'bg-gray-100 text-gray-500'}`}>
-                {statusLabel[b.status] ?? b.status.replace('_', ' ')}
-              </span>
-            </div>
-            {s?.starts_at && (
-              <p className="text-sm text-gray-500 mt-0.5">
-                {format(new Date(s.starts_at), 'EEE, MMM d · h:mm a')}
-                {s.staff?.full_name ? ` · ${s.staff.full_name}` : ''}
-              </p>
-            )}
-
-            {/* Cancel button for future confirmed bookings */}
-            {canCancel && (
-              within24h ? (
-                <p className="mt-2 text-xs text-gray-400">
-                  Cancellations closed within 24 hours
-                </p>
-              ) : (
-                <button
-                  onClick={() => { setCancelTarget(b); setCancelError(null); }}
-                  className="mt-2 text-xs font-medium text-red-500"
-                >
-                  Cancel booking
-                </button>
-              )
-            )}
-
-            {/* Existing rating display */}
-            {existingRating && (
-              <div className="mt-2.5 flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map(n => (
-                  <Star
-                    key={n}
-                    className="w-3.5 h-3.5"
-                    fill={n <= existingRating.stars ? '#facc15' : 'none'}
-                    stroke={n <= existingRating.stars ? '#eab308' : '#d1d5db'}
-                    strokeWidth={1.8}
-                  />
-                ))}
-                <span className="ml-1.5 text-xs text-gray-400">
-                  {existingRating.stars}/5
-                </span>
-              </div>
-            )}
-
-            {/* Rating prompt for eligible past bookings */}
-            {canRate && client && (
-              <RatingPrompt
-                bookingId={b.id}
-                clientId={client.id}
-                studioId={s?.studio_id ?? b.studio_id}
-                color={s?.class_types?.color ?? '#ffa504'}
-                onRated={() => queryClient.invalidateQueries({ queryKey: ['client_bookings'] })}
-              />
-            )}
+      <div className="card p-4">
+        {/* Row 1: icon + status + menu */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <ClassIcon name={s?.class_types?.name} color={classColor} />
+            <span className="flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase" style={{ color: 'var(--muted)' }}>
+              <span className={`w-1.5 h-1.5 rounded-full ${statusDot[b.status] ?? 'bg-gray-400'}`} />
+              {statusLabel[b.status] ?? b.status.replace(/_/g, ' ')}
+            </span>
           </div>
+
+          {/* ⋮ menu — only for cancellable bookings */}
+          {canCancel && (
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(menuOpen === b.id ? null : b.id)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/5 transition-colors"
+              >
+                <MoreHorizontal className="w-4 h-4" style={{ color: 'var(--muted)' }} />
+              </button>
+              {menuOpen === b.id && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(null)} />
+                  <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-xl shadow-lg border border-[var(--border)] z-20 overflow-hidden">
+                    <button
+                      onClick={() => { setMenuOpen(null); setCancelTarget(b); setCancelError(null); }}
+                      className="w-full text-left px-4 py-3 text-sm font-medium text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      Cancel booking
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* Class name */}
+        <p className="font-semibold text-base mb-0.5" style={{ color: 'var(--ink)' }}>
+          {s?.class_types?.name ?? 'Class'}
+        </p>
+
+        {/* Instructor */}
+        {s?.staff?.full_name && (
+          <p className="text-sm mb-2" style={{ color: 'var(--muted)' }}>
+            with {s.staff.full_name}
+          </p>
+        )}
+
+        {/* Date + Time row */}
+        {s?.starts_at && (
+          <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--muted)' }}>
+            <span className="flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5" />
+              {format(new Date(s.starts_at), 'MMM d')}
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" />
+              {format(new Date(s.starts_at), 'h:mm a')}
+            </span>
+          </div>
+        )}
+
+        {/* Star rating display */}
+        {existingRating && (
+          <div className="mt-3 flex items-center gap-0.5">
+            {[1, 2, 3, 4, 5].map(n => (
+              <Star
+                key={n}
+                className="w-3.5 h-3.5"
+                fill={n <= existingRating.stars ? '#FACC15' : 'none'}
+                stroke={n <= existingRating.stars ? '#EAB308' : '#D1D5DB'}
+                strokeWidth={1.8}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Rating prompt */}
+        {canRate && client && (
+          <RatingPrompt
+            bookingId={b.id}
+            clientId={client.id}
+            studioId={s?.studio_id ?? b.studio_id}
+            color={'var(--ink)'}
+            onRated={() => queryClient.invalidateQueries({ queryKey: ['client_bookings'] })}
+          />
+        )}
+
+        {within24h && isFuture && b.status === 'confirmed' && (
+          <p className="mt-2 text-xs" style={{ color: 'var(--muted)' }}>
+            Cancellations closed within 24 hours
+          </p>
+        )}
       </div>
     );
   }
@@ -208,18 +230,18 @@ export default function MyBookings() {
     ? format(new Date(cancelTarget.class_sessions.starts_at), 'EEE MMM d, h:mm a')
     : '';
 
-  // Count how many past bookings are unrated
-  const unratedCount = past.filter(b => {
-    const rating = Array.isArray(b.session_ratings)
-      ? b.session_ratings[0]
-      : b.session_ratings;
-    return b.status === 'confirmed' && !rating && b.class_sessions?.starts_at && isPast(new Date(b.class_sessions.starts_at));
-  }).length;
-
   return (
-    <div className="px-4 pt-6 pb-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Bookings</h1>
-      <p className="text-sm text-gray-500 mb-6">Your upcoming and past classes</p>
+    <div className="px-5 pb-6">
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="font-serif font-bold text-3xl" style={{ color: 'var(--ink)' }}>
+          My Reservations
+        </h1>
+        {unratedCount > 0 && (
+          <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
+            {unratedCount} to rate
+          </span>
+        )}
+      </div>
 
       {/* Cancel action sheet */}
       {cancelTarget && (
@@ -228,41 +250,36 @@ export default function MyBookings() {
             className="fixed inset-0 bg-black/40 z-40 animate-[fadeIn_0.2s_ease-out]"
             onClick={() => !cancelling && setCancelTarget(null)}
           />
-          <div
-            className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl p-6 shadow-xl animate-[slideUp_0.2s_ease-out]"
-          >
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--surface)] rounded-t-2xl p-6 shadow-xl animate-[slideUp_0.2s_ease-out]">
             <div className="flex items-center justify-between mb-1">
-              <p className="font-semibold text-gray-900">Cancel this booking?</p>
-              <button
-                onClick={() => !cancelling && setCancelTarget(null)}
-                className="p-1 text-gray-400"
-              >
+              <p className="font-serif font-bold text-lg" style={{ color: 'var(--ink)' }}>
+                Cancel booking?
+              </p>
+              <button onClick={() => !cancelling && setCancelTarget(null)} className="p-1" style={{ color: 'var(--muted)' }}>
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-5">
-              <span className="font-medium text-gray-700">{sessionName}</span>
+            <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>
+              <span className="font-semibold" style={{ color: 'var(--ink)' }}>{sessionName}</span>
               {sessionDate ? ` · ${sessionDate}` : ''}
             </p>
 
             {cancelError && (
-              <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3 mb-4">
-                {cancelError}
-              </div>
+              <div className="text-red-600 text-sm rounded-xl p-3 mb-4 bg-red-50">{cancelError}</div>
             )}
 
             <button
               disabled={cancelling}
               onClick={() => handleCancel('credit')}
-              className="w-full flex items-start gap-3 border border-gray-200 rounded-2xl p-4 mb-3 text-left disabled:opacity-50 active:bg-gray-50 transition-colors"
+              className="w-full flex items-start gap-3 border border-[var(--border)] rounded-2xl p-4 mb-3 text-left disabled:opacity-50 active:bg-[var(--subtle)] transition-colors"
             >
               <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
                 <RefreshCw className="w-4 h-4 text-blue-600" />
               </div>
               <div>
-                <p className="font-semibold text-gray-900 text-sm">Keep as studio credit</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Convert to a pass credit — book any future class at this studio. Nothing lost.
+                <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>Keep as studio credit</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                  Convert to a pass credit — book any future class at this studio.
                 </p>
               </div>
             </button>
@@ -270,32 +287,30 @@ export default function MyBookings() {
             <button
               disabled={cancelling}
               onClick={() => handleCancel('refund')}
-              className="w-full flex items-start gap-3 border border-gray-200 rounded-2xl p-4 mb-5 text-left disabled:opacity-50 active:bg-gray-50 transition-colors"
+              className="w-full flex items-start gap-3 border border-[var(--border)] rounded-2xl p-4 mb-5 text-left disabled:opacity-50 active:bg-[var(--subtle)] transition-colors"
             >
               <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center shrink-0 mt-0.5">
                 <CreditCard className="w-4 h-4 text-red-500" />
               </div>
               <div>
-                <p className="font-semibold text-gray-900 text-sm">Refund to my card</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Session cost refunded in 3-5 business days. The $15 app fee is non-refundable.
+                <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>Refund to my card</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                  Refunded in 3–5 business days. The app fee is non-refundable.
                 </p>
               </div>
             </button>
 
             <button
               onClick={() => !cancelling && setCancelTarget(null)}
-              className="w-full text-center text-sm text-gray-400 py-1"
+              className="w-full text-center text-sm py-1"
+              style={{ color: 'var(--muted)' }}
             >
               Never mind, keep my booking
             </button>
 
             {cancelling && (
               <div className="absolute inset-0 rounded-t-2xl bg-white/70 flex items-center justify-center">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full border-2 border-gray-200 border-t-gray-500 animate-spin" />
-                  <p className="text-sm text-gray-500 font-medium">Processing...</p>
-                </div>
+                <div className="w-5 h-5 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
               </div>
             )}
           </div>
@@ -304,56 +319,48 @@ export default function MyBookings() {
 
       {isLoading && (
         <div className="space-y-3">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-20 rounded-2xl bg-gray-100 animate-pulse" />
-          ))}
+          {[...Array(3)].map((_, i) => <div key={i} className="h-24 rounded-2xl animate-pulse" />)}
         </div>
       )}
 
       {!isLoading && bookings.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center mb-4">
-            <CalendarDays className="w-8 h-8 text-gray-300" />
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ backgroundColor: 'var(--subtle)' }}>
+            <CalendarDays className="w-8 h-8" style={{ color: 'var(--muted)' }} />
           </div>
-          <p className="font-medium text-gray-500">No bookings yet</p>
-          <p className="text-sm text-gray-400 mt-1">Book a class from Studios to get started</p>
+          <p className="font-semibold" style={{ color: 'var(--ink)' }}>No bookings yet</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>Book a class from Studios to get started</p>
         </div>
       )}
 
-      {/* Pending (in checkout right now) */}
       {livePending.length > 0 && (
         <div className="mb-6">
-          <p className="text-xs font-semibold text-amber-500 uppercase tracking-wider mb-2">In progress</p>
-          <div className="space-y-3">
-            {livePending.map(b => <BookingCard key={b.id} b={b} />)}
-          </div>
+          <SectionLabel>In Progress</SectionLabel>
+          <div className="space-y-3">{livePending.map(b => <BookingCard key={b.id} b={b} />)}</div>
         </div>
       )}
 
       {upcoming.length > 0 && (
         <div className="mb-6">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Upcoming</p>
-          <div className="space-y-3">
-            {upcoming.map(b => <BookingCard key={b.id} b={b} />)}
-          </div>
+          <SectionLabel>Upcoming</SectionLabel>
+          <div className="space-y-3">{upcoming.map(b => <BookingCard key={b.id} b={b} />)}</div>
         </div>
       )}
 
       {past.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Past</p>
-            {unratedCount > 0 && (
-              <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                {unratedCount} to rate
-              </span>
-            )}
-          </div>
-          <div className="space-y-3">
-            {past.map(b => <BookingCard key={b.id} b={b} />)}
-          </div>
+          <SectionLabel>Past</SectionLabel>
+          <div className="space-y-3">{past.map(b => <BookingCard key={b.id} b={b} />)}</div>
         </div>
       )}
     </div>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <p className="text-[11px] font-semibold tracking-widest uppercase mb-3" style={{ color: 'var(--muted)' }}>
+      {children}
+    </p>
   );
 }

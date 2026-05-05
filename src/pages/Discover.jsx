@@ -2,156 +2,293 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { ChevronRight, QrCode } from 'lucide-react';
+import { MapPin, QrCode, ArrowRight, Clock, User } from 'lucide-react';
+import { format, isToday, isTomorrow } from 'date-fns';
 
 export default function Discover() {
   const navigate = useNavigate();
   const { studios, client, loading } = useAuth();
 
-  // Fetch loyalty stamps for all studios this client belongs to
+  /* ── Loyalty stamps ─────────────────────────────────────── */
   const { data: loyalty = [] } = useQuery({
     queryKey: ['client_loyalty', client?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('client_loyalty')
         .select('studio_id, stamps, stamps_goal, discount_token, token_used')
         .eq('client_id', client.id);
-      if (error) throw error;
       return data ?? [];
     },
     enabled: !!client?.id,
   });
-
-  // Build a lookup map: studioId → loyalty row
   const loyaltyMap = {};
   loyalty.forEach(l => { loyaltyMap[l.studio_id] = l; });
 
+  /* ── Upcoming bookings (for home dashboard) ─────────────── */
+  const { data: upcoming = [] } = useQuery({
+    queryKey: ['upcoming_home', client?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('bookings')
+        .select(`
+          id, status,
+          class_sessions (
+            id, starts_at, studio_id,
+            class_types ( name, color ),
+            staff ( full_name ),
+            studios ( brand_name, name, primary_color )
+          )
+        `)
+        .eq('client_id', client.id)
+        .eq('status', 'confirmed')
+        .gte('class_sessions.starts_at', new Date().toISOString())
+        .order('class_sessions(starts_at)', { ascending: true })
+        .limit(4);
+      return (data ?? []).filter(b => b.class_sessions?.starts_at);
+    },
+    enabled: !!client?.id,
+  });
+
+  /* ── First name helper ──────────────────────────────────── */
+  const firstName = client?.full_name?.split(' ')[0]
+    ?? client?.email?.split('@')[0]
+    ?? 'there';
+
   if (loading) {
     return (
-      <div className="px-4 pt-6 pb-4 space-y-3">
-        {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-[76px] rounded-2xl bg-gray-100 animate-pulse" />
-        ))}
+      <div className="px-5 pt-4 space-y-4">
+        <div className="h-16 rounded-2xl animate-pulse" />
+        <div className="h-40 rounded-2xl animate-pulse" />
+        <div className="h-32 rounded-2xl animate-pulse" />
       </div>
     );
   }
 
-  if (studios.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full px-8 text-center">
-        <div className="w-20 h-20 rounded-3xl flex items-center justify-center mb-5" style={{ backgroundColor: 'var(--brand-light, #fff3d6)' }}>
-          <QrCode className="w-10 h-10" style={{ color: 'var(--brand)' }} />
-        </div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">No studios yet</h2>
-        <p className="text-sm text-gray-500 leading-relaxed max-w-[260px]">
-          Scan your studio's QR code or open their invite link to get started.
+  return (
+    <div className="pb-6">
+      {/* ── Greeting ──────────────────────────────────────── */}
+      <div className="px-5 pt-4 pb-5">
+        <h1
+          className="font-serif font-bold leading-tight mb-1"
+          style={{ fontSize: 32, color: 'var(--ink)' }}
+        >
+          What's up{'\n'}{firstName}!
+        </h1>
+        <p className="text-sm" style={{ color: 'var(--muted)' }}>
+          Here are your upcoming sessions and studios.
         </p>
       </div>
-    );
-  }
 
-  return (
-    <div className="px-4 pt-6 pb-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Studios</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        {studios.length === 1 ? '1 studio' : `${studios.length} studios`}
-      </p>
-
-      <div className="space-y-3">
-        {studios.map((s, i) => {
-          const initial = (s.brand_name || s.name || '?')[0].toUpperCase();
-          const color   = s.primary_color ?? '#ffa504';
-          const stamp   = loyaltyMap[s.id];
-
-          return (
+      {/* ── Upcoming Sessions ─────────────────────────────── */}
+      {upcoming.length > 0 && (
+        <section className="mb-6">
+          <div className="flex items-center justify-between px-5 mb-3">
+            <h2 className="font-serif font-bold text-lg" style={{ color: 'var(--ink)' }}>
+              Upcoming Sessions
+            </h2>
             <button
-              key={s.id}
-              onClick={() => navigate(`/studio/${s.id}`)}
-              className="w-full text-left bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center gap-4 active:scale-[0.98] transition-all duration-200 hover:shadow-md hover:border-gray-200 hover:-translate-y-px"
-              style={{ animationDelay: `${i * 60}ms` }}
+              onClick={() => navigate('/bookings')}
+              className="flex items-center gap-1 text-xs font-semibold tracking-wider uppercase"
+              style={{ color: 'var(--muted)' }}
             >
-              {/* Color accent bar */}
-              <div
-                className="w-1 self-stretch rounded-full shrink-0"
-                style={{ backgroundColor: color }}
-              />
-
-              {/* Logo or initials */}
-              {s.logo_url ? (
-                <img
-                  src={s.logo_url}
-                  alt={s.brand_name || s.name}
-                  className="w-12 h-12 rounded-xl object-cover shrink-0"
-                />
-              ) : (
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg shrink-0 shadow-sm"
-                  style={{ backgroundColor: color }}
-                >
-                  {initial}
-                </div>
-              )}
-
-              {/* Studio info */}
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900 truncate">
-                  {s.brand_name || s.name}
-                </p>
-                {s.tagline && (
-                  <p className="text-sm text-gray-500 truncate mt-0.5">{s.tagline}</p>
-                )}
-
-                {/* Loyalty stamp progress */}
-                {stamp && stamp.stamps > 0 && (
-                  <StampProgress
-                    stamps={stamp.stamps}
-                    goal={stamp.stamps_goal}
-                    color={color}
-                    hasReward={stamp.stamps >= stamp.stamps_goal && !stamp.token_used}
-                  />
-                )}
-              </div>
-
-              <ChevronRight className="w-5 h-5 text-gray-300 shrink-0" />
+              View All <ArrowRight className="w-3 h-3" />
             </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+          </div>
 
-/* ─── Stamp progress indicator ────────────────────────────────────── */
-function StampProgress({ stamps, goal, color, hasReward }) {
-  const display = Math.min(stamps, goal);
+          {/* Horizontal scroll cards */}
+          <div className="flex gap-3 px-5 overflow-x-auto scrollbar-none pb-2">
+            {upcoming.map((b) => {
+              const s     = b.class_sessions;
+              const color = s?.studios?.primary_color ?? s?.class_types?.color ?? '#8C8479';
+              const time  = s?.starts_at ? format(new Date(s.starts_at), 'h:mm a') : '';
+              const dayLabel = s?.starts_at
+                ? isToday(new Date(s.starts_at))
+                  ? 'Today'
+                  : isTomorrow(new Date(s.starts_at))
+                    ? 'Tomorrow'
+                    : format(new Date(s.starts_at), 'EEE, MMM d')
+                : '';
+              const studioName = s?.studios?.brand_name || s?.studios?.name || '';
 
-  if (hasReward) {
-    return (
-      <div className="flex items-center gap-1.5 mt-1.5">
-        <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-          Reward ready!
-        </span>
-      </div>
-    );
-  }
+              return (
+                <button
+                  key={b.id}
+                  onClick={() => navigate(`/studio/${s?.studio_id}`)}
+                  className="shrink-0 rounded-2xl overflow-hidden active:scale-[0.97] transition-transform"
+                  style={{ width: 200 }}
+                >
+                  {/* Image / gradient area */}
+                  <div
+                    className="relative h-28 flex flex-col justify-between p-3"
+                    style={{
+                      background: `linear-gradient(135deg, ${color}cc, ${color}66)`,
+                    }}
+                  >
+                    <span className="self-start text-[10px] font-semibold tracking-wide uppercase text-white/80 bg-black/20 rounded-full px-2 py-0.5">
+                      {dayLabel}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-white/80" />
+                      <span className="text-xs font-semibold text-white">{time}</span>
+                    </div>
+                  </div>
+                  {/* Info */}
+                  <div className="bg-[var(--surface)] border border-[var(--border)] border-t-0 rounded-b-2xl px-3 py-2.5 text-left">
+                    <p className="font-semibold text-sm truncate" style={{ color: 'var(--ink)' }}>
+                      {s?.class_types?.name ?? 'Class'}
+                    </p>
+                    {studioName && (
+                      <p className="text-xs mt-0.5 truncate flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                        <MapPin className="w-3 h-3 shrink-0" />
+                        {studioName}
+                      </p>
+                    )}
+                    {s?.staff?.full_name && (
+                      <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--muted)' }}>
+                        <span className="font-medium">Instructor</span> {s.staff.full_name}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
-  return (
-    <div className="flex items-center gap-1.5 mt-1.5">
-      <div className="flex gap-0.5">
-        {Array.from({ length: goal }).map((_, i) => (
+      {/* ── No studios empty state ───────────────────────── */}
+      {studios.length === 0 && !loading && (
+        <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
           <div
-            key={i}
-            className="w-2 h-2 rounded-full transition-colors duration-300"
-            style={{
-              backgroundColor: i < display ? color : 'transparent',
-              border: `1.5px solid ${i < display ? color : '#d1d5db'}`,
-            }}
-          />
-        ))}
-      </div>
-      <span className="text-[10px] text-gray-400 font-medium">
-        {display}/{goal}
-      </span>
+            className="w-20 h-20 rounded-3xl flex items-center justify-center mb-5"
+            style={{ backgroundColor: 'var(--subtle)' }}
+          >
+            <QrCode className="w-10 h-10" style={{ color: 'var(--muted)' }} />
+          </div>
+          <h2 className="font-serif font-bold text-xl mb-2" style={{ color: 'var(--ink)' }}>
+            No studios yet
+          </h2>
+          <p className="text-sm leading-relaxed max-w-[260px]" style={{ color: 'var(--muted)' }}>
+            Scan your studio's QR code or open their invite link to get started.
+          </p>
+        </div>
+      )}
+
+      {/* ── My Studios ───────────────────────────────────── */}
+      {studios.length > 0 && (
+        <section className="px-5">
+          <h2 className="font-serif font-bold text-lg mb-3" style={{ color: 'var(--ink)' }}>
+            My Studios
+          </h2>
+
+          <div className="space-y-3">
+            {studios.map((s) => {
+              const initial = (s.brand_name || s.name || '?')[0].toUpperCase();
+              const color   = s.primary_color ?? 'var(--ink)';
+              const stamp   = loyaltyMap[s.id];
+
+              return (
+                <div
+                  key={s.id}
+                  className="card p-4"
+                >
+                  {/* Top row: icon + name + ACTIVE badge */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      {s.logo_url ? (
+                        <img
+                          src={s.logo_url}
+                          alt={s.brand_name || s.name}
+                          className="w-8 h-8 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                          style={{ backgroundColor: color }}
+                        >
+                          {initial}
+                        </div>
+                      )}
+                    </div>
+                    {/* Active badge */}
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-green-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                      ACTIVE
+                    </span>
+                  </div>
+
+                  {/* Studio name */}
+                  <h3 className="font-serif font-bold text-xl leading-tight mb-1" style={{ color: 'var(--ink)' }}>
+                    {s.brand_name || s.name}
+                  </h3>
+
+                  {/* Location / tagline */}
+                  {(s.tagline || s.name) && (
+                    <p className="flex items-center gap-1 text-sm mb-3" style={{ color: 'var(--muted)' }}>
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      {s.tagline || s.name}
+                    </p>
+                  )}
+
+                  {/* Stamp progress */}
+                  {stamp && stamp.stamps > 0 && (
+                    <div className="flex items-center gap-1.5 mb-3">
+                      {stamp.stamps >= stamp.stamps_goal && !stamp.token_used ? (
+                        <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                          Reward ready!
+                        </span>
+                      ) : (
+                        <>
+                          <div className="flex gap-0.5">
+                            {Array.from({ length: stamp.stamps_goal }).map((_, i) => (
+                              <div
+                                key={i}
+                                className="w-2 h-2 rounded-full"
+                                style={{
+                                  backgroundColor: i < stamp.stamps ? color : 'transparent',
+                                  border: `1.5px solid ${i < stamp.stamps ? color : '#d1d5db'}`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                            {stamp.stamps}/{stamp.stamps_goal}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CTA button */}
+                  <button
+                    onClick={() => navigate(`/studio/${s.id}`)}
+                    className="btn-black w-full"
+                    style={{ fontSize: 12, letterSpacing: '0.08em', minHeight: 46 }}
+                  >
+                    RESERVATIONS <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+
+            {/* Explore Studios dashed card */}
+            <button
+              className="w-full border-2 border-dashed rounded-2xl py-8 flex flex-col items-center gap-2 active:scale-[0.98] transition-transform"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: 'var(--subtle)' }}
+              >
+                <span className="text-xl font-light" style={{ color: 'var(--muted)' }}>+</span>
+              </div>
+              <span className="text-xs font-semibold tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+                Explore Studios
+              </span>
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

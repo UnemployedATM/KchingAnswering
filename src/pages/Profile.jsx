@@ -2,39 +2,25 @@ import { useAuth } from '@/lib/AuthContext';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { LogOut, Check, ChevronRight, Star, Ticket, CalendarDays } from 'lucide-react';
+import { User, Shield, Check } from 'lucide-react';
 import { toast } from '@/components/ui/Toast';
+import { format } from 'date-fns';
 
 export default function Profile() {
   const { user, client, studios, logout, reloadClient } = useAuth();
-  const [phone, setPhone] = useState(client?.phone ?? '');
-  const [saving, setSaving] = useState(false);
+  const [phone,   setPhone]   = useState(client?.phone ?? '');
+  const [saving,  setSaving]  = useState(false);
 
-  // Quick stats
   const { data: stats } = useQuery({
     queryKey: ['profile_stats', client?.id],
     queryFn: async () => {
-      const [bookingsRes, passesRes, ratingsRes] = await Promise.all([
-        supabase
-          .from('bookings')
-          .select('id', { count: 'exact', head: true })
-          .eq('client_id', client.id)
-          .eq('status', 'confirmed'),
-        supabase
-          .from('client_memberships')
-          .select('id', { count: 'exact', head: true })
-          .eq('client_id', client.id)
-          .eq('status', 'active'),
-        supabase
-          .from('session_ratings')
-          .select('id', { count: 'exact', head: true })
-          .eq('client_id', client.id),
+      const [bookingsRes, passesRes] = await Promise.all([
+        supabase.from('bookings').select('id', { count: 'exact', head: true })
+          .eq('client_id', client.id).eq('status', 'confirmed'),
+        supabase.from('client_memberships').select('id', { count: 'exact', head: true })
+          .eq('client_id', client.id).eq('status', 'active'),
       ]);
-      return {
-        bookings: bookingsRes.count ?? 0,
-        passes:   passesRes.count ?? 0,
-        ratings:  ratingsRes.count ?? 0,
-      };
+      return { bookings: bookingsRes.count ?? 0, passes: passesRes.count ?? 0 };
     },
     enabled: !!client?.id,
   });
@@ -42,10 +28,7 @@ export default function Profile() {
   async function handleSave() {
     try {
       setSaving(true);
-      const { error } = await supabase
-        .from('clients')
-        .update({ phone })
-        .eq('id', client.id);
+      const { error } = await supabase.from('clients').update({ phone }).eq('id', client.id);
       if (error) throw error;
       await reloadClient();
       toast.success('Profile updated');
@@ -56,110 +39,140 @@ export default function Profile() {
     }
   }
 
-  const initial = (client?.full_name || user?.email || '?')[0].toUpperCase();
+  const fullName   = client?.full_name ?? '';
+  const firstName  = fullName.split(' ')[0] ?? '';
+  const lastName   = fullName.split(' ').slice(1).join(' ') ?? '';
+  const initial    = (fullName || user?.email || '?')[0].toUpperCase();
+
+  // Member since (from user created_at)
+  const memberSince = user?.created_at
+    ? format(new Date(user.created_at), 'MMM yyyy')
+    : null;
 
   return (
-    <div className="px-4 pt-6 pb-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Profile</h1>
+    <div className="px-5 pb-10">
+      <h1 className="font-serif font-bold text-3xl mb-5" style={{ color: 'var(--ink)' }}>
+        Profile & Settings
+      </h1>
 
-      {/* Avatar + name */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm" style={{ backgroundColor: 'var(--brand-light, #fff3d6)' }}>
+      {/* ── User card ──────────────────────────────────────── */}
+      <div className="card p-6 text-center mb-4">
+        {/* Avatar */}
+        <div className="flex justify-center mb-3">
           {user?.user_metadata?.avatar_url ? (
             <img
               src={user.user_metadata.avatar_url}
               alt=""
-              className="w-16 h-16 rounded-2xl object-cover"
+              className="w-16 h-16 rounded-full object-cover"
             />
           ) : (
-            <span className="text-2xl font-bold" style={{ color: 'var(--brand)' }}>{initial}</span>
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl font-bold font-serif"
+              style={{ backgroundColor: 'var(--ink)' }}
+            >
+              {initial}
+            </div>
           )}
         </div>
-        <div className="min-w-0">
-          <p className="font-semibold text-gray-900 text-lg truncate">
-            {client?.full_name ?? user?.email}
+        <p className="font-serif font-bold text-xl" style={{ color: 'var(--ink)' }}>
+          {client?.full_name ?? user?.email}
+        </p>
+        {memberSince && (
+          <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
+            Member since {memberSince}
           </p>
-          <p className="text-sm text-gray-500 truncate">{user?.email}</p>
-          {studios.length > 0 && (
-            <p className="text-xs text-gray-400 mt-0.5">
-              {studios.length} {studios.length === 1 ? 'studio' : 'studios'} joined
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Quick stats */}
-      {stats && (
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <StatCard icon={CalendarDays} label="Bookings" value={stats.bookings} color="#ffa504" />
-          <StatCard icon={Ticket}       label="Active passes" value={stats.passes} color="#6366f1" />
-          <StatCard icon={Star}         label="Ratings" value={stats.ratings} color="#eab308" />
-        </div>
-      )}
-
-      {/* Editable fields */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4 space-y-4">
-        <div>
-          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-            Phone
-          </label>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="Add phone number"
-            className="mt-1 w-full text-sm text-gray-800 border-0 border-b border-gray-200 pb-1 focus:outline-none focus:border-[#ffa504] bg-transparent"
-          />
-        </div>
-      </div>
-
-      <button
-        onClick={handleSave}
-        disabled={saving || phone === (client?.phone ?? '')}
-        className="w-full text-white rounded-xl py-3.5 font-semibold text-sm shadow-md active:scale-[0.98] transition-transform disabled:opacity-40 mb-6"
-        style={{ backgroundColor: 'var(--brand)' }}
-      >
-        {saving ? (
-          <span className="flex items-center justify-center gap-2">
-            <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-            Saving...
-          </span>
-        ) : (
-          <span className="flex items-center justify-center gap-2">
-            <Check className="w-4 h-4" />
-            Save Changes
+        )}
+        {stats && stats.passes > 0 && (
+          <span className="inline-flex items-center gap-1 mt-2 text-xs font-semibold" style={{ color: 'var(--ink)' }}>
+            ★ Active Pass Holder
           </span>
         )}
-      </button>
+      </div>
 
-      {/* Studios list */}
+      {/* ── Personal Information ────────────────────────────── */}
+      <div className="card p-5 mb-4">
+        <div className="flex items-center gap-2 mb-4">
+          <User className="w-5 h-5" style={{ color: 'var(--ink)' }} />
+          <h2 className="font-serif font-bold text-lg" style={{ color: 'var(--ink)' }}>
+            Personal Information
+          </h2>
+        </div>
+
+        <div className="space-y-4">
+          <InputField label="FIRST NAME" value={firstName} readOnly />
+          <InputField label="LAST NAME"  value={lastName}  readOnly />
+          <InputField
+            label="PHONE NUMBER"
+            value={phone}
+            placeholder="Add phone number"
+            onChange={e => setPhone(e.target.value)}
+          />
+        </div>
+
+        <button
+          onClick={handleSave}
+          disabled={saving || phone === (client?.phone ?? '')}
+          className="btn-black w-full mt-5"
+        >
+          {saving ? (
+            <span className="flex items-center gap-2">
+              <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+              Saving...
+            </span>
+          ) : (
+            <>Save Changes <Check className="w-4 h-4" /></>
+          )}
+        </button>
+      </div>
+
+      {/* ── Account Security ──────────────────────────────── */}
+      <div className="card p-5 mb-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Shield className="w-5 h-5" style={{ color: 'var(--ink)' }} />
+          <h2 className="font-serif font-bold text-lg" style={{ color: 'var(--ink)' }}>
+            Account Security
+          </h2>
+        </div>
+
+        <div className="space-y-2">
+          <div>
+            <p className="text-[10px] font-semibold tracking-widest uppercase mb-1" style={{ color: 'var(--muted)' }}>
+              Email Address
+            </p>
+            <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
+              {user?.email}
+            </p>
+          </div>
+          <p className="text-xs" style={{ color: 'var(--muted)' }}>
+            To update your email or password, sign in again via Google or Apple.
+          </p>
+        </div>
+      </div>
+
+      {/* ── My Studios ───────────────────────────────────── */}
       {studios.length > 0 && (
         <div className="mb-6">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          <h2 className="font-serif font-bold text-lg mb-3" style={{ color: 'var(--ink)' }}>
             My Studios
-          </p>
+          </h2>
           <div className="space-y-2">
             {studios.map(s => {
-              const c = s.primary_color ?? '#ffa504';
+              const c = s.primary_color ?? 'var(--ink)';
               return (
-                <div
-                  key={s.id}
-                  className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center gap-3"
-                >
+                <div key={s.id} className="card flex items-center gap-3 px-4 py-3">
                   {s.logo_url ? (
-                    <img src={s.logo_url} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                    <img src={s.logo_url} alt="" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
                     <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-bold"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
                       style={{ backgroundColor: c }}
                     >
                       {(s.brand_name || s.name || '?')[0].toUpperCase()}
                     </div>
                   )}
-                  <p className="text-sm font-medium text-gray-700 flex-1 truncate">
+                  <p className="text-sm font-semibold flex-1 truncate" style={{ color: 'var(--ink)' }}>
                     {s.brand_name || s.name}
                   </p>
-                  <ChevronRight className="w-4 h-4 text-gray-300" />
                 </div>
               );
             })}
@@ -167,26 +180,37 @@ export default function Profile() {
         </div>
       )}
 
-      {/* Sign out */}
+      {/* ── Sign out ─────────────────────────────────────── */}
       <button
         onClick={logout}
-        className="w-full flex items-center justify-center gap-2 text-red-500 text-sm font-medium py-3 rounded-2xl border border-red-100 bg-red-50 active:scale-[0.98] transition-transform"
+        className="w-full text-center text-sm font-semibold py-4 rounded-full border border-[var(--border)] active:scale-[0.98] transition-transform"
+        style={{ color: 'var(--muted)' }}
       >
-        <LogOut className="h-4 w-4" />
         Sign Out
       </button>
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value, color }) {
+function InputField({ label, value, onChange, placeholder, readOnly }) {
   return (
-    <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 text-center">
-      <div className="w-8 h-8 rounded-lg mx-auto mb-1.5 flex items-center justify-center" style={{ backgroundColor: `${color}15` }}>
-        <Icon className="w-4 h-4" style={{ color }} />
-      </div>
-      <p className="text-lg font-bold text-gray-900">{value}</p>
-      <p className="text-[10px] text-gray-400 font-medium">{label}</p>
+    <div>
+      <p className="text-[10px] font-semibold tracking-widest uppercase mb-1.5" style={{ color: 'var(--muted)' }}>
+        {label}
+      </p>
+      <input
+        type="text"
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        readOnly={readOnly}
+        className="w-full px-3 py-3 rounded-xl border text-sm font-medium focus:outline-none transition-colors"
+        style={{
+          backgroundColor: readOnly ? 'var(--subtle)' : 'var(--surface)',
+          borderColor: 'var(--border)',
+          color: 'var(--ink)',
+        }}
+      />
     </div>
   );
 }

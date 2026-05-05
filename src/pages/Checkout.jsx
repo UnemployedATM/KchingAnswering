@@ -1,34 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
-import {
-  Elements,
-  CardElement,
-  useStripe,
-  useElements,
-} from '@stripe/react-stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Info } from 'lucide-react';
+import { ArrowLeft, Info, ArrowRight } from 'lucide-react';
 
-/* ─── Stripe appearance ───────────────────────────────────────────────── */
+/* ─── Stripe card styles ───────────────────────────────────────────────── */
 const CARD_STYLE = {
   style: {
     base: {
-      fontSize: '16px',
-      color: '#111827',
-      fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-      '::placeholder': { color: '#9ca3af' },
+      fontSize: '15px',
+      color: '#1A1612',
+      fontFamily: 'Inter, ui-sans-serif, sans-serif',
+      '::placeholder': { color: '#8C8479' },
     },
     invalid: { color: '#ef4444' },
   },
 };
 
-/* ─── Payment form (inside <Elements>) ───────────────────────────────── */
+/* ─── Payment form ─────────────────────────────────────────────────────── */
 function PaymentForm({ clientSecret, breakdown, itemType, bookingId, slotLabel, onSuccess }) {
   const stripe   = useStripe();
   const elements = useElements();
-  const [paying, setPaying] = useState(false);
-  const [error,  setError]  = useState(null);
+  const [paying,  setPaying]  = useState(false);
+  const [error,   setError]   = useState(null);
   const [feeInfo, setFeeInfo] = useState(false);
 
   async function handlePay(e) {
@@ -48,7 +43,6 @@ function PaymentForm({ clientSecret, breakdown, itemType, bookingId, slotLabel, 
       const { data: { session: authSession } } = await supabase.auth.getSession();
 
       if (itemType === 'session' && bookingId) {
-        // Confirm the pending booking that was created before checkout
         const res = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/confirm-booking`,
           {
@@ -57,16 +51,12 @@ function PaymentForm({ clientSecret, breakdown, itemType, bookingId, slotLabel, 
               Authorization: `Bearer ${authSession.access_token}`,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-              booking_id:        bookingId,
-              payment_intent_id: paymentIntent.id,
-            }),
+            body: JSON.stringify({ booking_id: bookingId, payment_intent_id: paymentIntent.id }),
           }
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? 'Booking confirmation failed after payment');
       }
-      // For plans, membership creation is handled server-side via webhook.
 
       onSuccess(paymentIntent.id);
     } catch (err) {
@@ -77,75 +67,98 @@ function PaymentForm({ clientSecret, breakdown, itemType, bookingId, slotLabel, 
   }
 
   return (
-    <form onSubmit={handlePay} className="flex flex-col gap-5">
-      {/* Cost breakdown */}
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-        <p className="font-semibold text-gray-900 mb-1">{breakdown.item_name}</p>
-        <p className="text-xs text-gray-400 mb-1">{breakdown.item_description}</p>
+    <form onSubmit={handlePay} className="space-y-4">
+      {/* Plan Summary card */}
+      <div className="card p-5">
+        <p className="text-[10px] font-semibold tracking-widest uppercase mb-3" style={{ color: 'var(--muted)' }}>
+          Plan Summary
+        </p>
+        <p className="font-serif font-bold text-2xl leading-tight mb-1" style={{ color: 'var(--ink)' }}>
+          {breakdown.item_name}
+        </p>
+        <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>
+          {breakdown.item_description}
+        </p>
         {slotLabel && (
-          <p className="text-xs font-medium text-green-700 bg-green-50 rounded-lg px-2.5 py-1 mb-3 inline-block">
+          <p className="text-xs font-medium text-green-700 bg-green-50 rounded-lg px-3 py-1.5 mb-4 inline-block">
             🎯 {slotLabel}
           </p>
         )}
 
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-gray-500">Amount</span>
-            <span className="font-medium text-gray-900">${breakdown.item_price_mxn} MXN</span>
-          </div>
-
-          <div className="flex justify-between items-center">
-            <span className="flex items-center gap-1 text-gray-500">
-              App fee
-              <button
-                type="button"
-                onClick={() => setFeeInfo(v => !v)}
-                className="text-gray-400"
-              >
-                <Info className="w-3.5 h-3.5" />
-              </button>
-            </span>
-            <span className="font-medium text-gray-900">${breakdown.serenity_fee_mxn} MXN</span>
-          </div>
-
+        {/* Itemized breakdown */}
+        <div className="space-y-2.5 text-sm border-t border-[var(--border)] pt-4">
+          <LineItem label="Monthly Plan" value={`$${breakdown.item_price_mxn} MXN`} />
+          <LineItem label="Initiation Fee" value="Waived" />
+          <LineItem
+            label={
+              <span className="flex items-center gap-1">
+                App fee
+                <button type="button" onClick={() => setFeeInfo(v => !v)}>
+                  <Info className="w-3.5 h-3.5" style={{ color: 'var(--muted)' }} />
+                </button>
+              </span>
+            }
+            value={`$${breakdown.serenity_fee_mxn} MXN`}
+          />
           {feeInfo && (
-            <p className="text-xs text-gray-400 bg-gray-50 rounded-xl p-3">
-              This fee keeps the Serenity app running and is non-refundable.
+            <p className="text-xs px-0 py-2" style={{ color: 'var(--muted)' }}>
+              This fee keeps the app running and is non-refundable.
             </p>
           )}
+        </div>
 
-          <div className="border-t border-gray-100 pt-2 flex justify-between">
-            <span className="font-semibold text-gray-900">Total</span>
-            <span className="font-bold text-gray-900">${breakdown.total_mxn} MXN</span>
-          </div>
+        <div className="flex justify-between items-center mt-3 pt-3 border-t border-[var(--border)]">
+          <p className="text-[11px] font-bold tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
+            Total Due Today
+          </p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>
+            ${breakdown.total_mxn} MXN
+          </p>
         </div>
       </div>
 
-      {/* Card input */}
-      <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-        <p className="text-sm font-semibold text-gray-700 mb-3">Card details</p>
-        <div className="border border-gray-200 rounded-xl p-3">
+      {/* Payment Method */}
+      <div className="card p-5">
+        <p className="text-[10px] font-semibold tracking-widest uppercase mb-4" style={{ color: 'var(--muted)' }}>
+          Payment Method
+        </p>
+
+        <div className="border border-[var(--border)] rounded-xl p-3.5">
           <CardElement options={CARD_STYLE} />
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3">{error}</div>
+        <div className="text-red-600 text-sm rounded-xl p-3 bg-red-50">{error}</div>
       )}
+
+      {/* Legal */}
+      <p className="text-xs text-center px-4 leading-relaxed" style={{ color: 'var(--muted)' }}>
+        By confirming, you agree to our Terms of Service and Privacy Policy.
+      </p>
 
       <button
         type="submit"
         disabled={paying || !stripe}
-        className="w-full text-white rounded-xl py-4 font-semibold text-base shadow-md active:scale-[0.98] transition-transform disabled:opacity-50"
-        style={{ backgroundColor: 'var(--brand)' }}
+        className="btn-black w-full"
       >
-        {paying ? 'Processing…' : `Pay $${breakdown.total_mxn} MXN`}
+        {paying ? (
+          <span className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+            Processing…
+          </span>
+        ) : (
+          <>
+            {itemType === 'plan' ? 'Subscribe & Pay' : `Pay $${breakdown.total_mxn} MXN`}
+            <ArrowRight className="w-4 h-4" />
+          </>
+        )}
       </button>
     </form>
   );
 }
 
-/* ─── Countdown timer bar ─────────────────────────────────────────────── */
+/* ─── Countdown bar ────────────────────────────────────────────────────── */
 function CountdownBar({ expiresAt, studioId, navigate }) {
   const [secondsLeft, setSecondsLeft] = useState(null);
   const timerRef = useRef(null);
@@ -153,7 +166,6 @@ function CountdownBar({ expiresAt, studioId, navigate }) {
   useEffect(() => {
     if (!expiresAt) return;
     const end = new Date(expiresAt).getTime();
-
     function tick() {
       const left = Math.max(0, Math.floor((end - Date.now()) / 1000));
       setSecondsLeft(left);
@@ -162,7 +174,6 @@ function CountdownBar({ expiresAt, studioId, navigate }) {
         navigate(`/studio/${studioId}`, { replace: true, state: { expiredMessage: true } });
       }
     }
-
     tick();
     timerRef.current = setInterval(tick, 1000);
     return () => clearInterval(timerRef.current);
@@ -170,10 +181,10 @@ function CountdownBar({ expiresAt, studioId, navigate }) {
 
   if (secondsLeft === null) return null;
 
-  const mins = Math.floor(secondsLeft / 60);
-  const secs = String(secondsLeft % 60).padStart(2, '0');
-  const pct  = Math.min(100, (secondsLeft / 300) * 100); // 300s = 5min
-  const urgent = secondsLeft < 60;
+  const mins    = Math.floor(secondsLeft / 60);
+  const secs    = String(secondsLeft % 60).padStart(2, '0');
+  const pct     = Math.min(100, (secondsLeft / 300) * 100);
+  const urgent  = secondsLeft < 60;
   const shaking = secondsLeft < 30 && secondsLeft > 0;
 
   return (
@@ -194,15 +205,15 @@ function CountdownBar({ expiresAt, studioId, navigate }) {
   );
 }
 
-/* ─── Main checkout page ──────────────────────────────────────────────── */
+/* ─── Main page ────────────────────────────────────────────────────────── */
 export default function Checkout() {
   const [params]   = useSearchParams();
   const navigate   = useNavigate();
 
-  const item_type  = params.get('item_type');   // 'session' | 'plan'
+  const item_type  = params.get('item_type');
   const item_id    = params.get('item_id');
   const studio_id  = params.get('studio_id');
-  const slot_id    = params.get('slot_id') || null;
+  const slot_id    = params.get('slot_id')    || null;
   const booking_id = params.get('booking_id') || null;
   const expires_at = params.get('expires_at') || null;
 
@@ -219,12 +230,10 @@ export default function Checkout() {
       setLoading(false);
       return;
     }
-    // Load slot label if this is a circuit booking
     if (slot_id) {
       supabase.from('session_slots').select('slot_label').eq('id', slot_id).single()
         .then(({ data }) => { if (data) setSlotLabel(data.slot_label); });
     }
-
     async function init() {
       try {
         const { data: { session: authSession } } = await supabase.auth.getSession();
@@ -232,16 +241,12 @@ export default function Checkout() {
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
           {
             method: 'POST',
-            headers: {
-              Authorization: `Bearer ${authSession.access_token}`,
-              'Content-Type': 'application/json',
-            },
+            headers: { Authorization: `Bearer ${authSession.access_token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ item_type, item_id, studio_id }),
           }
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? 'Failed to create payment');
-
         setClientSecret(data.client_secret);
         setBreakdown(data.breakdown);
         setStripeP(loadStripe(data.publishable_key, { stripeAccount: undefined }));
@@ -256,56 +261,66 @@ export default function Checkout() {
 
   function handleSuccess(paymentIntentId) {
     const q = new URLSearchParams({ item_type, studio_id });
-    if (booking_id) q.set('booking_id', booking_id);
+    if (booking_id)     q.set('booking_id',        booking_id);
     if (paymentIntentId) q.set('payment_intent_id', paymentIntentId);
     navigate(`/booking/success?${q.toString()}`, { replace: true });
   }
 
   return (
-    <div className="px-4 pt-4 pb-8">
-      <button
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-1 text-gray-500 text-sm mb-5"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back
-      </button>
+    <div className="min-h-full" style={{ backgroundColor: 'var(--bg)' }}>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 pt-4 pb-3">
+        <button
+          onClick={() => navigate(-1)}
+          className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-black/5 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5" style={{ color: 'var(--ink)' }} />
+        </button>
+        <h1 className="font-serif font-bold text-2xl" style={{ color: 'var(--ink)' }}>
+          Checkout
+        </h1>
+      </div>
 
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Checkout</h1>
-      <p className="text-sm text-gray-500 mb-4">Review and pay for your booking</p>
+      <div className="px-5 pb-8">
+        {/* Countdown */}
+        {expires_at && item_type === 'session' && (
+          <CountdownBar expiresAt={expires_at} studioId={studio_id} navigate={navigate} />
+        )}
 
-      {/* Countdown for ghost-booked sessions */}
-      {expires_at && item_type === 'session' && (
-        <CountdownBar
-          expiresAt={expires_at}
-          studioId={studio_id}
-          navigate={navigate}
-        />
-      )}
+        {loading && (
+          <div className="space-y-4">
+            <div className="h-48 rounded-2xl animate-pulse" />
+            <div className="h-24 rounded-2xl animate-pulse" />
+            <div className="h-14 rounded-2xl animate-pulse" />
+          </div>
+        )}
 
-      {loading && (
-        <div className="space-y-4">
-          <div className="h-36 rounded-2xl bg-gray-100 animate-pulse" />
-          <div className="h-24 rounded-2xl bg-gray-100 animate-pulse" />
-          <div className="h-14 rounded-2xl bg-gray-100 animate-pulse" />
-        </div>
-      )}
+        {!loading && error && (
+          <div className="text-red-600 text-sm rounded-xl p-4 bg-red-50">{error}</div>
+        )}
 
-      {!loading && error && (
-        <div className="bg-red-50 text-red-600 text-sm rounded-xl p-4">{error}</div>
-      )}
+        {!loading && !error && stripePromise && clientSecret && (
+          <Elements stripe={stripePromise} options={{ clientSecret }}>
+            <PaymentForm
+              clientSecret={clientSecret}
+              breakdown={breakdown}
+              itemType={item_type}
+              bookingId={booking_id}
+              slotLabel={slotLabel}
+              onSuccess={handleSuccess}
+            />
+          </Elements>
+        )}
+      </div>
+    </div>
+  );
+}
 
-      {!loading && !error && stripePromise && clientSecret && (
-        <Elements stripe={stripePromise} options={{ clientSecret }}>
-          <PaymentForm
-            clientSecret={clientSecret}
-            breakdown={breakdown}
-            itemType={item_type}
-            bookingId={booking_id}
-            slotLabel={slotLabel}
-            onSuccess={handleSuccess}
-          />
-        </Elements>
-      )}
+function LineItem({ label, value }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span style={{ color: 'var(--muted)' }}>{label}</span>
+      <span className="font-medium" style={{ color: 'var(--ink)' }}>{value}</span>
     </div>
   );
 }
