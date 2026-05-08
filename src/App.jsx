@@ -1,23 +1,65 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import AppShell from '@/components/layout/AppShell';
 import Auth from '@/pages/Auth';
-import Discover from '@/pages/Discover';
-import StudioClasses from '@/pages/StudioClasses';
-import MyPasses from '@/pages/MyPasses';
-import MyBookings from '@/pages/MyBookings';
-import Checkout from '@/pages/Checkout';
-import BookingSuccess from '@/pages/BookingSuccess';
-import Profile from '@/pages/Profile';
-import { Toaster } from '@/components/ui/Toast';
+import { Toaster, toast } from '@/components/ui/Toast';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { supabase } from '@/lib/supabase'; // used for join_studio RPC in ProtectedRoutes
 
+/* ─── Code-split route pages ──────────────────────────────────────────── */
+const Discover       = lazy(() => import('@/pages/Discover'));
+const StudioClasses  = lazy(() => import('@/pages/StudioClasses'));
+const MyPasses       = lazy(() => import('@/pages/MyPasses'));
+const MyBookings     = lazy(() => import('@/pages/MyBookings'));
+const Checkout       = lazy(() => import('@/pages/Checkout'));
+const BookingSuccess = lazy(() => import('@/pages/BookingSuccess'));
+const Profile        = lazy(() => import('@/pages/Profile'));
+
+/* ─── Global error surface for any Supabase / RLS / network failure ──── */
+function describeQueryError(err) {
+  const msg = err?.message ?? String(err);
+  // Supabase RLS errors typically include "row-level security" or come back with code 42501
+  if (/row-level security|permission denied|JWT/i.test(msg)) {
+    return 'You don\'t have access to this data. Try signing out and back in.';
+  }
+  if (/Failed to fetch|NetworkError|ERR_NETWORK|ERR_INTERNET/i.test(msg)) {
+    return 'Network error. Check your connection.';
+  }
+  if (/PGRST/i.test(msg)) {
+    return 'The server couldn\'t process this request.';
+  }
+  return msg;
+}
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 1000 * 30, retry: 1 } },
+  queryCache: new QueryCache({
+    onError: (error, query) => {
+      // Only surface a toast if the query has been observed at least once
+      // (don't spam during background refetches that succeed silently)
+      if (query.state.data !== undefined) return;
+      const msg = describeQueryError(error);
+      // De-dup: skip if same message is already showing
+      toast.error(msg);
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      toast.error(describeQueryError(error));
+    },
+  }),
 });
+
+/* ─── Lazy-page suspense fallback ─────────────────────────────────────── */
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="w-8 h-8 rounded-full border-2 border-[var(--border)] border-t-[var(--ink)] animate-spin" />
+    </div>
+  );
+}
 
 // Persist ?studio= param to localStorage so it survives the OAuth redirect
 const pendingStudio = new URLSearchParams(window.location.search).get('studio');
@@ -47,18 +89,20 @@ function ProtectedRoutes() {
   if (!isAuthenticated) return <Navigate to="/auth" replace />;
 
   return (
-    <Routes>
-      <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/discover" replace />} />
-        <Route path="discover"              element={<Discover />} />
-        <Route path="studio/:studioId"     element={<StudioClasses />} />
-        <Route path="passes"               element={<MyPasses />} />
-        <Route path="bookings"             element={<MyBookings />} />
-        <Route path="checkout"             element={<Checkout />} />
-        <Route path="booking/success"      element={<BookingSuccess />} />
-        <Route path="profile"              element={<Profile />} />
-      </Route>
-    </Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route index element={<Navigate to="/discover" replace />} />
+          <Route path="discover"              element={<Discover />} />
+          <Route path="studio/:studioId"     element={<StudioClasses />} />
+          <Route path="passes"               element={<MyPasses />} />
+          <Route path="bookings"             element={<MyBookings />} />
+          <Route path="checkout"             element={<Checkout />} />
+          <Route path="booking/success"      element={<BookingSuccess />} />
+          <Route path="profile"              element={<Profile />} />
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }
 

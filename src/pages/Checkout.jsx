@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { supabase } from '@/lib/supabase';
-import { ArrowLeft, Info, ArrowRight } from 'lucide-react';
+import { ArrowLeft, Info, ArrowRight, RefreshCw, AlertTriangle } from 'lucide-react';
 
 /* ─── Stripe card styles ───────────────────────────────────────────────── */
 const CARD_STYLE = {
@@ -223,6 +223,7 @@ export default function Checkout() {
   const [breakdown,     setBreakdown]    = useState(null);
   const [stripePromise, setStripeP]      = useState(null);
   const [slotLabel,     setSlotLabel]    = useState(null);
+  const [retryNonce,    setRetryNonce]   = useState(0);
 
   useEffect(() => {
     if (!item_type || !item_id || !studio_id) {
@@ -234,7 +235,10 @@ export default function Checkout() {
       supabase.from('session_slots').select('slot_label').eq('id', slot_id).single()
         .then(({ data }) => { if (data) setSlotLabel(data.slot_label); });
     }
+    let cancelled = false;
     async function init() {
+      setLoading(true);
+      setError(null);
       try {
         const { data: { session: authSession } } = await supabase.auth.getSession();
         const res = await fetch(
@@ -247,17 +251,21 @@ export default function Checkout() {
         );
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? 'Failed to create payment');
+        if (cancelled) return;
         setClientSecret(data.client_secret);
         setBreakdown(data.breakdown);
         setStripeP(loadStripe(data.publishable_key, { stripeAccount: undefined }));
       } catch (err) {
-        setError(err.message);
+        if (!cancelled) setError(err.message);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     init();
-  }, [item_type, item_id, studio_id]);
+    return () => { cancelled = true; };
+  }, [item_type, item_id, studio_id, retryNonce]);
+
+  function retry() { setRetryNonce(n => n + 1); }
 
   function handleSuccess(paymentIntentId) {
     const q = new URLSearchParams({ item_type, studio_id });
@@ -296,7 +304,30 @@ export default function Checkout() {
         )}
 
         {!loading && error && (
-          <div className="text-red-600 text-sm rounded-xl p-4 bg-red-50">{error}</div>
+          <div className="card p-6 text-center">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#FEF2F2' }}>
+              <AlertTriangle className="w-7 h-7 text-red-500" />
+            </div>
+            <p className="font-serif font-bold text-lg mb-1" style={{ color: 'var(--ink)' }}>
+              We couldn't start your payment
+            </p>
+            <p className="text-sm mb-5" style={{ color: 'var(--muted)' }}>
+              {error}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button onClick={retry} className="btn-black w-full">
+                <RefreshCw className="w-4 h-4" />
+                Try again
+              </button>
+              <button
+                onClick={() => navigate(-1)}
+                className="text-sm font-semibold py-2"
+                style={{ color: 'var(--muted)' }}
+              >
+                Go back
+              </button>
+            </div>
+          </div>
         )}
 
         {!loading && !error && stripePromise && clientSecret && (

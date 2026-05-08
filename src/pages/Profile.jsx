@@ -44,9 +44,10 @@ export default function Profile() {
   const lastName   = fullName.split(' ').slice(1).join(' ') ?? '';
   const initial    = (fullName || user?.email || '?')[0].toUpperCase();
 
-  // Member since (from user created_at)
-  const memberSince = user?.created_at
-    ? format(new Date(user.created_at), 'MMM yyyy')
+  // Member since — prefer client.created_at, fall back to auth user.created_at
+  const memberSinceDate = client?.created_at ?? user?.created_at;
+  const memberSince = memberSinceDate
+    ? format(new Date(memberSinceDate), 'MMM yyyy')
     : null;
 
   return (
