@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Key, QrCode, X, ArrowLeft, AlertCircle, Camera } from 'lucide-react';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { ArrowLeft } from 'lucide-react';
+import JoinStudioForm from '@/components/StudioOnboarding/JoinStudioForm';
+import QrScannerSheet from '@/components/StudioOnboarding/QrScannerSheet';
+import { validateStudioToken, extractTokenFromQr, UUID_RE } from '@/lib/joinStudio';
 
 export default function Auth() {
   const { signInWithGoogle, signInWithApple } = useAuth();
@@ -29,22 +30,10 @@ export default function Auth() {
   }, []);
 
   async function validateAndContinue(rawToken) {
-    const t = (rawToken ?? '').trim();
-    if (!t) return;
     setValidating(true);
     setTokenError(null);
     try {
-      if (!UUID_RE.test(t)) {
-        throw new Error("That token doesn't look right. Ask your studio for the link or QR code.");
-      }
-      const { data, error } = await supabase
-        .from('studios')
-        .select('id, name, brand_name, primary_color, logo_url, tagline')
-        .eq('id', t)
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) throw new Error("No studio found for that token. Double-check with your studio.");
-
+      const data = await validateStudioToken(rawToken, supabase);
       // Persist so the post-OAuth handler in App.jsx can join the studio.
       localStorage.setItem('pending_studio_id', data.id);
       setStudio(data);
@@ -70,13 +59,7 @@ export default function Auth() {
 
   function handleQrResult(text) {
     setScannerOpen(false);
-    let extracted = (text ?? '').trim();
-    // QR codes may encode a deep link or a URL with ?studio=<id>; pull the id out if so.
-    try {
-      const url = new URL(extracted);
-      const param = url.searchParams.get('studio') ?? url.searchParams.get('token');
-      if (param) extracted = param;
-    } catch { /* not a URL — treat as raw token */ }
+    const extracted = extractTokenFromQr(text);
     setToken(extracted);
     validateAndContinue(extracted);
   }
@@ -121,11 +104,6 @@ export default function Auth() {
 
 /* ─── Step 1: Welcome / token entry ─────────────────────────────────────── */
 function WelcomeStep({ token, setToken, onSubmit, validating, tokenError, openScanner }) {
-  function submit(e) {
-    e.preventDefault();
-    onSubmit(token);
-  }
-
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8 py-12 w-full">
       {/* Wordmark */}
@@ -136,67 +114,14 @@ function WelcomeStep({ token, setToken, onSubmit, validating, tokenError, openSc
         B-Cool
       </h1>
 
-      {/* Token form */}
-      <form onSubmit={submit} className="w-full max-w-xs">
-        <div
-          className="flex items-center gap-3 px-4 rounded-full border"
-          style={{
-            backgroundColor: 'var(--surface)',
-            borderColor: tokenError ? '#fecaca' : 'var(--border)',
-            height: 56,
-          }}
-        >
-          <Key
-            className="w-[18px] h-[18px] shrink-0 rotate-[-45deg]"
-            style={{ color: 'var(--muted)' }}
-          />
-          <input
-            type="text"
-            value={token}
-            onChange={e => setToken(e.target.value)}
-            placeholder="Invite Token"
-            spellCheck={false}
-            autoCapitalize="none"
-            autoCorrect="off"
-            className="flex-1 bg-transparent outline-none text-sm font-medium"
-            style={{ color: 'var(--ink)' }}
-            aria-label="Invite token"
-          />
-          {token && (
-            <button
-              type="submit"
-              disabled={validating}
-              className="text-xs font-bold tracking-wider uppercase shrink-0 disabled:opacity-50"
-              style={{ color: 'var(--ink)' }}
-            >
-              {validating ? '…' : 'Go'}
-            </button>
-          )}
-        </div>
-
-        {tokenError && (
-          <div className="mt-3 flex items-start gap-2 text-xs px-2" style={{ color: '#b91c1c' }}>
-            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>{tokenError}</span>
-          </div>
-        )}
-      </form>
-
-      {/* Scan QR pill */}
-      <button
-        onClick={openScanner}
-        className="mt-5 inline-flex items-center gap-2 rounded-full border bg-[var(--surface)] hover:bg-black/5 transition-colors active:scale-[0.97]"
-        style={{
-          height: 44,
-          paddingLeft: 22,
-          paddingRight: 22,
-          borderColor: 'var(--border)',
-          color: 'var(--ink)',
-        }}
-      >
-        <QrCode className="w-4 h-4" />
-        <span className="text-sm font-medium">Scan QR code</span>
-      </button>
+      <JoinStudioForm
+        token={token}
+        setToken={setToken}
+        onSubmit={onSubmit}
+        validating={validating}
+        tokenError={tokenError}
+        openScanner={openScanner}
+      />
 
       {/* Footer links */}
       <div className="mt-10 flex items-center gap-5 text-xs font-medium">
@@ -330,165 +255,3 @@ function AppleIcon() {
     </svg>
   );
 }
-
-/* ─── QR Scanner sheet ──────────────────────────────────────────────────── */
-function QrScannerSheet({ onClose, onResult }) {
-  const videoRef = useRef(null);
-  const rafRef = useRef(null);
-  const streamRef = useRef(null);
-  const [status, setStatus] = useState('starting'); // 'starting' | 'scanning' | 'unsupported' | 'denied' | 'noaccess'
-  const [errorMsg, setErrorMsg] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function start() {
-      // Check API support
-      const hasDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window;
-      if (!hasDetector) {
-        setStatus('unsupported');
-        return;
-      }
-      // Check camera support
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus('noaccess');
-        return;
-      }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
-          audio: false,
-        });
-        if (cancelled) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
-        }
-        // eslint-disable-next-line no-undef
-        const detector = new BarcodeDetector({ formats: ['qr_code'] });
-        setStatus('scanning');
-
-        const tick = async () => {
-          if (cancelled) return;
-          if (!videoRef.current || videoRef.current.readyState < 2) {
-            rafRef.current = requestAnimationFrame(tick);
-            return;
-          }
-          try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes.length > 0) {
-              onResult(codes[0].rawValue);
-              return;
-            }
-          } catch { /* ignore frame errors */ }
-          rafRef.current = requestAnimationFrame(tick);
-        };
-        rafRef.current = requestAnimationFrame(tick);
-      } catch (e) {
-        if (e?.name === 'NotAllowedError' || e?.name === 'SecurityError') {
-          setStatus('denied');
-        } else {
-          setStatus('noaccess');
-          setErrorMsg(e?.message ?? 'Camera unavailable');
-        }
-      }
-    }
-    start();
-
-    return () => {
-      cancelled = true;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach(t => t.stop());
-    };
-  }, [onResult]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black animate-[fadeIn_0.2s_ease-out]">
-      {/* Top bar */}
-      <div
-        className="flex items-center justify-between px-5 py-3 text-white"
-        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
-      >
-        <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors" aria-label="Close">
-          <X className="w-5 h-5" />
-        </button>
-        <span className="text-sm font-semibold">Scan QR code</span>
-        <span className="w-10" />
-      </div>
-
-      {/* Camera area */}
-      <div className="flex-1 relative flex items-center justify-center overflow-hidden">
-        <video
-          ref={videoRef}
-          playsInline
-          muted
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-
-        {/* Reticle */}
-        {status === 'scanning' && (
-          <div
-            className="relative w-64 h-64 rounded-3xl"
-            style={{
-              boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
-              border: '2px solid rgba(255,255,255,0.85)',
-            }}
-          >
-            {/* corners */}
-            {['top-0 left-0 border-t-4 border-l-4 rounded-tl-2xl',
-              'top-0 right-0 border-t-4 border-r-4 rounded-tr-2xl',
-              'bottom-0 left-0 border-b-4 border-l-4 rounded-bl-2xl',
-              'bottom-0 right-0 border-b-4 border-r-4 rounded-br-2xl',
-            ].map((c, i) => (
-              <span key={i} className={`absolute w-7 h-7 ${c}`} style={{ borderColor: '#fff' }} />
-            ))}
-          </div>
-        )}
-
-        {/* States */}
-        {status === 'starting' && (
-          <div className="text-white text-center">
-            <div className="w-8 h-8 mx-auto rounded-full border-2 border-white/30 border-t-white animate-spin mb-3" />
-            <p className="text-sm">Opening camera…</p>
-          </div>
-        )}
-
-        {(status === 'unsupported' || status === 'noaccess' || status === 'denied') && (
-          <div className="text-white text-center px-8 max-w-sm">
-            <Camera className="w-10 h-10 mx-auto opacity-70 mb-3" />
-            <p className="font-semibold mb-1">
-              {status === 'denied' ? 'Camera access denied'
-                : status === 'unsupported' ? 'QR scanning isn\'t supported here'
-                : 'Camera unavailable'}
-            </p>
-            <p className="text-sm opacity-80">
-              {status === 'denied'
-                ? 'Allow camera access in your browser settings, or paste the token manually instead.'
-                : status === 'unsupported'
-                ? 'Your browser doesn\'t support live QR scanning. Paste your invite token on the previous screen.'
-                : (errorMsg ?? 'Try paste the token manually instead.')}
-            </p>
-            <button
-              onClick={onClose}
-              className="mt-5 inline-flex items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold bg-white text-black"
-            >
-              Use token instead
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Footer hint */}
-      {status === 'scanning' && (
-        <div className="px-8 pb-10 pt-4 text-center text-white/80 text-sm">
-          Point your camera at the studio's QR code.
-        </div>
-      )}
-    </div>
-  );
-}
-

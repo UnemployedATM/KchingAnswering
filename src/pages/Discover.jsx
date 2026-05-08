@@ -156,7 +156,7 @@ export default function Discover() {
         </section>
       )}
 
-      {/* ── No studios empty state ───────────────────────── */}
+      {/* ── No studios empty state (safety net — auto-redirect handles this) ── */}
       {studios.length === 0 && !loading && (
         <div className="flex flex-col items-center justify-center py-16 px-8 text-center">
           <div
@@ -168,9 +168,12 @@ export default function Discover() {
           <h2 className="font-serif font-bold text-xl mb-2" style={{ color: 'var(--ink)' }}>
             No studios yet
           </h2>
-          <p className="text-sm leading-relaxed max-w-[260px]" style={{ color: 'var(--muted)' }}>
-            Scan your studio's QR code or open their invite link to get started.
+          <p className="text-sm leading-relaxed max-w-[260px] mb-5" style={{ color: 'var(--muted)' }}>
+            Enter your invite token or scan your studio's QR code to get started.
           </p>
+          <button onClick={() => navigate('/join')} className="btn-black">
+            Join a studio <ArrowRight className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -271,9 +274,10 @@ export default function Discover() {
               );
             })}
 
-            {/* Explore Studios dashed card */}
+            {/* Explore Studios dashed card → /join */}
             <button
-              className="w-full border-2 border-dashed rounded-2xl py-8 flex flex-col items-center gap-2 active:scale-[0.98] transition-transform"
+              onClick={() => navigate('/join')}
+              className="w-full border-2 border-dashed rounded-2xl py-8 flex flex-col items-center gap-2 active:scale-[0.98] transition-transform hover:bg-black/[0.02]"
               style={{ borderColor: 'var(--border)' }}
             >
               <div
@@ -283,7 +287,7 @@ export default function Discover() {
                 <span className="text-xl font-light" style={{ color: 'var(--muted)' }}>+</span>
               </div>
               <span className="text-xs font-semibold tracking-widest uppercase" style={{ color: 'var(--muted)' }}>
-                Explore Studios
+                Add a Studio
               </span>
             </button>
           </div>

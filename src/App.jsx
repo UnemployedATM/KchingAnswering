@@ -1,5 +1,5 @@
 import { useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import AppShell from '@/components/layout/AppShell';
@@ -16,6 +16,7 @@ const MyBookings     = lazy(() => import('@/pages/MyBookings'));
 const Checkout       = lazy(() => import('@/pages/Checkout'));
 const BookingSuccess = lazy(() => import('@/pages/BookingSuccess'));
 const Profile        = lazy(() => import('@/pages/Profile'));
+const JoinStudio     = lazy(() => import('@/pages/JoinStudio'));
 
 /* ─── Global error surface for any Supabase / RLS / network failure ──── */
 function describeQueryError(err) {
@@ -66,7 +67,9 @@ const pendingStudio = new URLSearchParams(window.location.search).get('studio');
 if (pendingStudio) localStorage.setItem('pending_studio_id', pendingStudio);
 
 function ProtectedRoutes() {
-  const { isAuthenticated, loading, user, client, reloadClient } = useAuth();
+  const { isAuthenticated, loading, user, client, studios, reloadClient } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Once logged in, check for a pending studio invite and join it.
   // Works for any client regardless of how many studios they're already in.
@@ -77,6 +80,18 @@ function ProtectedRoutes() {
       supabase.rpc('join_studio', { p_studio_id: studioId }).then(() => reloadClient());
     }
   }, [user, client]);
+
+  // Force-redirect users with zero studios to the in-app join page.
+  // Skipped while a join is racing in the background (pending_studio_id present).
+  useEffect(() => {
+    if (loading) return;
+    if (!isAuthenticated) return;
+    if (client === undefined) return;
+    if (studios.length > 0) return;
+    if (location.pathname.startsWith('/join')) return;
+    if (localStorage.getItem('pending_studio_id')) return;
+    navigate('/join', { replace: true });
+  }, [loading, isAuthenticated, client, studios.length, location.pathname, navigate]);
 
   if (loading) {
     return (
@@ -91,6 +106,10 @@ function ProtectedRoutes() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
+        {/* Full-bleed: no TopBar/BottomNav */}
+        <Route path="join" element={<JoinStudio />} />
+
+        {/* Standard app shell */}
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/discover" replace />} />
           <Route path="discover"              element={<Discover />} />
